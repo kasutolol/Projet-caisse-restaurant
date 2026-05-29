@@ -108,17 +108,30 @@ export default function MenuScreen() {
 
   const addItem = async (cat: Category, item: MenuItem, options: any[], n: string) => {
     triggerToast(`+1 ${item.name}`, item.id);
-    await api(`/orders/${orderId}/items`, {
-      method: "POST",
-      body: JSON.stringify({
-        item_name: item.name,
-        category_key: cat.key,
-        unit_price: item.price,
-        quantity: 1,
-        options,
-        note: n,
-      }),
-    });
+    // Optimistic update: add to local state immediately so user sees feedback
+    const tempItem: OrderItem = {
+      id: `temp-${Date.now()}`,
+      item_name: item.name,
+      category_key: cat.key,
+      unit_price: item.price,
+      quantity: 1,
+      options: options.map((o: any) => ({ group: o.group, value: o.value })),
+      course: order?.next_course || 1,
+    };
+    setOrder(prev => prev ? { ...prev, items: [...prev.items, tempItem] } : prev);
+    try {
+      await api(`/orders/${orderId}/items`, {
+        method: "POST",
+        body: JSON.stringify({
+          item_name: item.name,
+          category_key: cat.key,
+          unit_price: item.price,
+          quantity: 1,
+          options,
+          note: n,
+        }),
+      });
+    } catch (e) {}
     loadOrder();
   };
 
@@ -179,6 +192,43 @@ export default function MenuScreen() {
         )}
       </View>
 
+      {/* TOP cart preview (always visible) */}
+      <View style={styles.cartPanel}>
+        <View style={styles.cartHeader}>
+          <View style={styles.cartBadge}>
+            <Text style={styles.cartBadgeText}>{totalCount}</Text>
+          </View>
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={styles.cartTitle}>
+              {totalCount === 0 ? "Commande vide" : `Total : ${fmtPrice(totalPrice)}`}
+            </Text>
+            <Text style={styles.cartSub}>
+              {totalCount === 0 ? "Touchez un article" : `${totalCount} article${totalCount > 1 ? "s" : ""} ajoutés`}
+            </Text>
+          </View>
+          {totalCount > 0 && (
+            <TouchableOpacity testID="cart-expand-btn" onPress={() => setShowCart(true)} style={styles.cartExpandBtn}>
+              <Ionicons name="list" size={16} color="#fff" />
+              <Text style={styles.cartExpandBtnText}>Tout</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        {allItems.length > 0 && (
+          <View style={styles.cartList}>
+            {allItems.slice(-3).reverse().map(it => (
+              <View key={it.id} style={styles.cartRowMini}>
+                <Text style={styles.cartRowMiniQty}>{it.quantity}×</Text>
+                <Text style={styles.cartRowMiniName} numberOfLines={1}>
+                  {it.item_name}
+                  {it.options.length > 0 ? ` (${it.options.map(o => o.value).join(", ")})` : ""}
+                </Text>
+                <Text style={styles.cartRowMiniPrice}>{fmtPrice(it.unit_price * it.quantity)}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
       {!isSearching && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catBar} contentContainerStyle={{ paddingHorizontal: 10, gap: 8 }}>
           {menu.map(c => {
@@ -198,7 +248,7 @@ export default function MenuScreen() {
         </ScrollView>
       )}
 
-      <ScrollView contentContainerStyle={[styles.itemsGrid, { paddingBottom: 220 }]} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.itemsGrid, { paddingBottom: 40 }]} keyboardShouldPersistTaps="handled">
         {isSearching ? (
           searchResults.length === 0 ? (
             <Text style={styles.noResults}>Aucun article ne correspond à "{search}"</Text>
@@ -281,45 +331,7 @@ export default function MenuScreen() {
         </Animated.View>
       )}
 
-      {/* Sticky cart preview: shows FULL order live with last 3 items visible */}
-      <View style={styles.cartPanel}>
-        <View style={styles.cartHeader}>
-          <View style={styles.cartBadge}>
-            <Text style={styles.cartBadgeText}>{totalCount}</Text>
-          </View>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.cartTitle}>
-              {totalCount === 0 ? "Aucun article" : `Commande : ${fmtPrice(totalPrice)}`}
-            </Text>
-            <Text style={styles.cartSub}>
-              {totalCount === 0 ? "Touchez un produit pour l'ajouter" : `${totalCount} article${totalCount > 1 ? "s" : ""}`}
-            </Text>
-          </View>
-          {totalCount > 0 && (
-            <TouchableOpacity testID="cart-expand-btn" onPress={() => setShowCart(true)} style={styles.cartExpandBtn}>
-              <Ionicons name="list" size={18} color="#fff" />
-              <Text style={styles.cartExpandBtnText}>Tout voir</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        {allItems.length > 0 && (
-          <View style={styles.cartList}>
-            {allItems.slice(-3).reverse().map(it => (
-              <View key={it.id} style={styles.cartRowMini}>
-                <Text style={styles.cartRowMiniQty}>{it.quantity}×</Text>
-                <Text style={styles.cartRowMiniName} numberOfLines={1}>
-                  {it.item_name}
-                  {it.options.length > 0 ? ` (${it.options.map(o => o.value).join(", ")})` : ""}
-                </Text>
-                <Text style={styles.cartRowMiniPrice}>{fmtPrice(it.unit_price * it.quantity)}</Text>
-              </View>
-            ))}
-            {allItems.length > 3 && (
-              <Text style={styles.cartMoreText}>+ {allItems.length - 3} autres articles · touchez "Tout voir"</Text>
-            )}
-          </View>
-        )}
-      </View>
+      {/* Bottom cart preview removed - now at TOP */}
 
       {/* Cart modal: shows ALL items grouped by course */}
       <Modal visible={showCart} transparent animationType="slide" onRequestClose={() => setShowCart(false)}>
