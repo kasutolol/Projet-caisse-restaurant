@@ -1,0 +1,26 @@
+{
+  "summary": "Both backend and frontend tested end-to-end for the French restaurant ordering app. All 12 backend pytest tests pass (menu 13 categories, 12 seeded tables, full order lifecycle: open -> add item with options -> update qty -> send -> delete -> close, status filter, 404 errors). Frontend Expo web preview renders correctly on mobile viewport: 12-table grid with free/occupied color states, covers selection modal (chips 1-8), order screen with quantity +/- / Envoyer / Cloturer buttons, menu screen with horizontal category bar (13 cats) + items grid showing option indicators, orders history screen with 'En cours' / 'Clôturées' tabs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_restaurant_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py uses deprecated @app.on_event('startup'/'shutdown') - consider migrating to FastAPI lifespan handler (non-blocking).",
+    "Startup seed deletes the entire menu collection on every reload; OK for demo but would drop runtime menu edits if any were ever added."
+  ],
+  "updated_files": ["/app/backend/tests/test_restaurant_api.py"],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% on flows tested"},
+  "seed_data_creation": "Tests create an open order on a free table and close it at the end (test_07) so no leftover state. One order was left open during Playwright UI exploration (Table 1, Entrecote 28€).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Frontend testIDs in place: table-card-{n}, covers-input, confirm-open-btn, back-btn, add-btn, order-item-{id}, order-total, send-btn, close-btn, menu-back-btn, view-order-btn, cat-{key}, item-{id}, orders-btn. Note: covers chip values (1-8) are visible buttons but do NOT have individual data-testid - use covers-input + confirm-open-btn for tests. After tapping an occupied table-card-1, app navigates directly to order screen (no modal). Free tables open the covers modal.",
+  "rca_of_issue": "N/A - no failures."
+}
