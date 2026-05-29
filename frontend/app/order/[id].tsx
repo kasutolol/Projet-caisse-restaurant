@@ -8,8 +8,12 @@ import { api, COLORS, fmtPrice } from "@/src/api";
 type OrderItem = {
   id: string; item_name: string; category_key: string; unit_price: number;
   quantity: number; options: { group: string; value: string }[]; note: string; sent: boolean;
+  course: number;
 };
-type Order = { id: string; table_number: number; covers: number; status: string; items: OrderItem[]; total: number };
+type Order = {
+  id: string; table_number: number; covers: number; status: string;
+  items: OrderItem[]; total: number; next_course: number;
+};
 
 export default function OrderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -18,6 +22,7 @@ export default function OrderScreen() {
   const [closeModal, setCloseModal] = useState(false);
   const [coversModal, setCoversModal] = useState(false);
   const [newCovers, setNewCovers] = useState("2");
+  const [moveItem, setMoveItem] = useState<OrderItem | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -35,6 +40,20 @@ export default function OrderScreen() {
     await api(`/orders/${id}/send`, { method: "POST" });
     setFeedback("✓ Commande envoyée");
     setTimeout(() => setFeedback(null), 1500);
+    load();
+  };
+
+  const addNextCourse = async () => {
+    await api(`/orders/${id}/next-course`, { method: "POST" });
+    setFeedback("✓ Nouvelle ligne 'À SUIVRE' créée");
+    setTimeout(() => setFeedback(null), 1500);
+    load();
+  };
+
+  const moveItemToCourse = async (course: number) => {
+    if (!moveItem) return;
+    await api(`/orders/${id}/items/${moveItem.id}/course?course=${course}`, { method: "PUT" });
+    setMoveItem(null);
     load();
   };
 
@@ -60,11 +79,11 @@ export default function OrderScreen() {
     return <SafeAreaView style={styles.safe}><Text style={styles.loading}>Chargement…</Text></SafeAreaView>;
   }
 
-  const grouped: Record<string, OrderItem[]> = {};
-  order.items.forEach(it => {
-    grouped[it.category_key] = grouped[it.category_key] || [];
-    grouped[it.category_key].push(it);
-  });
+  // Group by course, then by category within each course
+  const courses = Array.from(new Set(order.items.map(i => i.course || 1))).sort((a, b) => a - b);
+  // Always include the active "next_course" so the empty round is visible
+  if (!courses.includes(order.next_course)) courses.push(order.next_course);
+  courses.sort((a, b) => a - b);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -93,41 +112,61 @@ export default function OrderScreen() {
             <Text style={styles.emptyText}>Aucun article. Touchez "Ajouter" pour commencer.</Text>
           </View>
         )}
-        {Object.keys(grouped).map(catKey => {
-          const items = grouped[catKey];
+        {courses.map(c => {
+          const itemsOfCourse = order.items.filter(i => (i.course || 1) === c);
+          const isActive = c === order.next_course;
+          const label = c === 1 ? "1ʳᵉ TOURNÉE" : `À SUIVRE — ${c}`;
           return (
-            <View key={catKey} style={styles.group}>
-              {items.map(it => (
-                <View key={it.id} testID={`order-item-${it.id}`} style={[styles.item, !it.sent && styles.itemPending]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.itemName}>{it.item_name}</Text>
-                    {it.options.map((o, i) => (
-                      <Text key={i} style={styles.opt}>· {o.group}: {o.value}</Text>
-                    ))}
-                    {!!it.note && <Text style={styles.note}>Note: {it.note}</Text>}
-                    {!it.sent && <Text style={styles.pendingTag}>NOUVEAU</Text>}
+            <View key={c} style={styles.courseBlock}>
+              <View style={[styles.courseHeader, isActive && styles.courseHeaderActive]}>
+                <Ionicons name={c === 1 ? "flag" : "arrow-forward-circle"} size={16} color={isActive ? "#fff" : COLORS.text} />
+                <Text style={[styles.courseLabel, isActive && styles.courseLabelActive]}>{label}</Text>
+                {isActive && <Text style={[styles.courseTag]}>articles ajoutés ici</Text>}
+              </View>
+              {itemsOfCourse.length === 0 ? (
+                <Text style={styles.coursePlaceholder}>(vide — les prochains articles iront ici)</Text>
+              ) : (
+                itemsOfCourse.map(it => (
+                  <View key={it.id} testID={`order-item-${it.id}`} style={[styles.item, !it.sent && styles.itemPending]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemName}>{it.item_name}</Text>
+                      {it.options.map((o, i) => (
+                        <Text key={i} style={styles.opt}>· {o.group}: {o.value}</Text>
+                      ))}
+                      {!!it.note && <Text style={styles.note}>Note: {it.note}</Text>}
+                      {!it.sent && <Text style={styles.pendingTag}>NOUVEAU</Text>}
+                    </View>
+                    <View style={styles.qtyBox}>
+                      <TouchableOpacity onPress={() => updateQty(it.id, it.quantity - 1)} style={styles.qBtn}>
+                        <Ionicons name="remove" size={18} color={COLORS.text} />
+                      </TouchableOpacity>
+                      <Text style={styles.qty}>{it.quantity}</Text>
+                      <TouchableOpacity onPress={() => updateQty(it.id, it.quantity + 1)} style={styles.qBtn}>
+                        <Ionicons name="add" size={18} color={COLORS.text} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={styles.price}>{fmtPrice(it.unit_price * it.quantity)}</Text>
+                      <TouchableOpacity testID={`move-${it.id}`} onPress={() => setMoveItem(it)} style={styles.moveBtn}>
+                        <Ionicons name="swap-vertical" size={14} color={COLORS.primary} />
+                        <Text style={styles.moveBtnText}>Déplacer</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <View style={styles.qtyBox}>
-                    <TouchableOpacity onPress={() => updateQty(it.id, it.quantity - 1)} style={styles.qBtn}>
-                      <Ionicons name="remove" size={18} color={COLORS.text} />
-                    </TouchableOpacity>
-                    <Text style={styles.qty}>{it.quantity}</Text>
-                    <TouchableOpacity onPress={() => updateQty(it.id, it.quantity + 1)} style={styles.qBtn}>
-                      <Ionicons name="add" size={18} color={COLORS.text} />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.price}>{fmtPrice(it.unit_price * it.quantity)}</Text>
-                </View>
-              ))}
+                ))
+              )}
             </View>
           );
         })}
+
+        <TouchableOpacity testID="next-course-btn" style={styles.nextCourseBtn} onPress={addNextCourse}>
+          <Ionicons name="add-circle" size={20} color={COLORS.primary} />
+          <Text style={styles.nextCourseText}>+ Nouvelle ligne "À SUIVRE"</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {feedback && (
-        <View style={styles.feedback}>
-          <Text style={styles.feedbackText}>{feedback}</Text>
-        </View>
+        <View style={styles.feedback}><Text style={styles.feedbackText}>{feedback}</Text></View>
       )}
 
       <View style={styles.footer}>
@@ -147,7 +186,33 @@ export default function OrderScreen() {
         </View>
       </View>
 
-      {/* Close confirmation modal (custom, works on all platforms) */}
+      {/* Move item modal */}
+      <Modal visible={!!moveItem} transparent animationType="fade" onRequestClose={() => setMoveItem(null)}>
+        <View style={styles.modalBack}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Déplacer l'article</Text>
+            <Text style={styles.modalText} numberOfLines={2}>{moveItem?.item_name}</Text>
+            <Text style={styles.modalLabel}>Vers quelle ligne ?</Text>
+            <View style={styles.courseChips}>
+              {courses.map(c => (
+                <TouchableOpacity
+                  key={c}
+                  testID={`move-to-${c}`}
+                  style={[styles.courseChip, moveItem?.course === c && styles.courseChipCurrent]}
+                  onPress={() => moveItemToCourse(c)}
+                >
+                  <Text style={styles.courseChipText}>{c === 1 ? "1ʳᵉ tournée" : `À suivre ${c}`}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={[styles.mBtn, styles.btnSecondary, { marginTop: 14 }]} onPress={() => setMoveItem(null)}>
+              <Text style={styles.btnSecondaryText}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Close modal */}
       <Modal visible={closeModal} transparent animationType="fade" onRequestClose={() => setCloseModal(false)}>
         <View style={styles.modalBack}>
           <View style={styles.modalCard}>
@@ -216,19 +281,29 @@ const styles = StyleSheet.create({
   addBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 },
   addBtnText: { color: "#fff", fontWeight: "800", fontSize: 14 },
   list: { padding: 12, paddingBottom: 30 },
-  empty: { alignItems: "center", marginTop: 80, gap: 12 },
+  empty: { alignItems: "center", marginTop: 60, gap: 12 },
   emptyText: { color: COLORS.textSecondary, textAlign: "center", paddingHorizontal: 40 },
-  group: { marginBottom: 8 },
-  item: { flexDirection: "row", alignItems: "center", backgroundColor: COLORS.surface, padding: 12, borderRadius: 12, marginBottom: 6, gap: 10, borderWidth: 1, borderColor: COLORS.border },
+  courseBlock: { marginBottom: 14 },
+  courseHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: COLORS.bg, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: COLORS.text, marginBottom: 6 },
+  courseHeaderActive: { backgroundColor: COLORS.primary, borderLeftColor: COLORS.primaryDark },
+  courseLabel: { fontSize: 12, fontWeight: "900", letterSpacing: 1, color: COLORS.text, flex: 1 },
+  courseLabelActive: { color: "#fff" },
+  courseTag: { fontSize: 10, fontWeight: "700", color: "#fff", opacity: 0.85 },
+  coursePlaceholder: { fontSize: 12, color: COLORS.textSecondary, fontStyle: "italic", paddingHorizontal: 12, paddingVertical: 8 },
+  item: { flexDirection: "row", alignItems: "center", backgroundColor: COLORS.surface, padding: 12, borderRadius: 12, marginBottom: 6, gap: 8, borderWidth: 1, borderColor: COLORS.border },
   itemPending: { borderColor: COLORS.primary, borderWidth: 2 },
   itemName: { fontSize: 15, fontWeight: "700", color: COLORS.text },
   opt: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
   note: { fontSize: 12, color: COLORS.warning, marginTop: 2, fontStyle: "italic" },
   pendingTag: { fontSize: 10, fontWeight: "800", color: COLORS.primary, marginTop: 4, letterSpacing: 0.5 },
   qtyBox: { flexDirection: "row", alignItems: "center", backgroundColor: COLORS.bg, borderRadius: 10 },
-  qBtn: { width: 30, height: 30, alignItems: "center", justifyContent: "center" },
-  qty: { fontWeight: "800", fontSize: 15, width: 22, textAlign: "center" },
-  price: { fontWeight: "800", fontSize: 14, color: COLORS.text, minWidth: 60, textAlign: "right" },
+  qBtn: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
+  qty: { fontWeight: "800", fontSize: 14, width: 20, textAlign: "center" },
+  price: { fontWeight: "800", fontSize: 13, color: COLORS.text },
+  moveBtn: { flexDirection: "row", alignItems: "center", gap: 2, marginTop: 4, paddingVertical: 2 },
+  moveBtnText: { fontSize: 10, fontWeight: "700", color: COLORS.primary },
+  nextCourseBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 14, borderRadius: 12, borderWidth: 2, borderStyle: "dashed", borderColor: COLORS.primary, backgroundColor: "#F0F5FF", marginTop: 4 },
+  nextCourseText: { fontWeight: "800", color: COLORS.primary, fontSize: 14 },
   feedback: { position: "absolute", alignSelf: "center", bottom: 130, backgroundColor: "#14532D", paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12 },
   feedbackText: { color: "#fff", fontWeight: "800" },
   footer: { padding: 14, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border },
@@ -244,7 +319,12 @@ const styles = StyleSheet.create({
   modalBack: { flex: 1, backgroundColor: "rgba(9,9,11,0.6)", justifyContent: "center", padding: 20 },
   modalCard: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 22 },
   modalTitle: { fontSize: 22, fontWeight: "900", color: COLORS.text, marginTop: 8, textAlign: "center" },
-  modalText: { fontSize: 14, color: COLORS.textSecondary, marginTop: 8, marginBottom: 18, textAlign: "center", lineHeight: 20 },
+  modalText: { fontSize: 14, color: COLORS.textSecondary, marginTop: 8, marginBottom: 14, textAlign: "center", lineHeight: 20 },
+  modalLabel: { fontSize: 12, fontWeight: "800", color: COLORS.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10, marginTop: 4 },
+  courseChips: { gap: 8 },
+  courseChip: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, borderWidth: 2, borderColor: COLORS.border, alignItems: "center" },
+  courseChipCurrent: { backgroundColor: COLORS.successBg, borderColor: COLORS.success },
+  courseChipText: { fontWeight: "800", color: COLORS.text, fontSize: 15 },
   modalActions: { flexDirection: "row", gap: 10, marginTop: 12 },
   mBtn: { flex: 1, paddingVertical: 16, borderRadius: 12, alignItems: "center" },
   btnPrimary: { backgroundColor: COLORS.primary },

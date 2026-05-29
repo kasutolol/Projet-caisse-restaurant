@@ -53,6 +53,7 @@ class OrderItem(BaseModel):
     options: List[OrderItemOption] = []
     note: str = ""
     sent: bool = False  # marked sent to kitchen/bar
+    course: int = 1  # round number (1 = first round, 2 = "à suivre", etc.)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -63,6 +64,7 @@ class Order(BaseModel):
     covers: int
     items: List[OrderItem] = []
     status: str = "open"  # open | closed
+    next_course: int = 1  # active round for new items
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     closed_at: Optional[datetime] = None
 
@@ -78,6 +80,7 @@ class OrderItemCreate(BaseModel):
     quantity: int = 1
     options: List[OrderItemOption] = []
     note: str = ""
+    course: Optional[int] = None
 
 
 class TableCreate(BaseModel):
@@ -226,11 +229,41 @@ async def get_order(order_id: str):
 
 @api_router.post("/orders/{order_id}/items")
 async def add_item(order_id: str, body: OrderItemCreate):
-    item = OrderItem(**body.dict())
+    o = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not o:
+        raise HTTPException(404, "Commande introuvable")
+    data = body.dict()
+    if data.get("course") is None:
+        data["course"] = o.get("next_course", 1)
+    item = OrderItem(**data)
     await db.orders.update_one(
         {"id": order_id}, {"$push": {"items": item.dict()}}
     )
     return clean(item.dict())
+
+
+@api_router.post("/orders/{order_id}/next-course")
+async def add_next_course(order_id: str):
+    """Crée un nouveau round 'à suivre' : les prochains articles iront dedans."""
+    o = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not o:
+        raise HTTPException(404, "Commande introuvable")
+    new_course = o.get("next_course", 1) + 1
+    await db.orders.update_one(
+        {"id": order_id}, {"$set": {"next_course": new_course}}
+    )
+    return {"ok": True, "next_course": new_course}
+
+
+@api_router.put("/orders/{order_id}/items/{item_id}/course")
+async def move_item_course(order_id: str, item_id: str, course: int):
+    if course < 1:
+        raise HTTPException(400, "Round invalide")
+    await db.orders.update_one(
+        {"id": order_id, "items.id": item_id},
+        {"$set": {"items.$.course": course}},
+    )
+    return {"ok": True}
 
 
 @api_router.delete("/orders/{order_id}/items/{item_id}")
