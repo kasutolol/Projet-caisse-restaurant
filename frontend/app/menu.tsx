@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   noResults: { width: "100%", textAlign: "center", color: COLORS.textSecondary, padding: 40, fontStyle: "italic" },
   catBtn: { paddingHorizontal: 16, height: 44, borderRadius: 22, borderWidth: 2, alignItems: "center", justifyContent: "center", alignSelf: "center" },
   catBtnText: { fontWeight: "800", fontSize: 14 },
-  itemsGrid: { padding: 10, flexDirection: "row", flexWrap: "wrap", gap: 8, paddingBottom: 40 },
+  itemsGrid: { padding: 10, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 8, paddingBottom: 40 },
   itemCard: { width: "48.5%", minHeight: 100, backgroundColor: COLORS.surface, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, borderTopWidth: 4, padding: 10, justifyContent: "space-between" },
   itemName: { fontSize: 13, fontWeight: "700", color: COLORS.text, lineHeight: 17 },
   itemUnit: { fontSize: 11, color: COLORS.textSecondary, marginTop: 2 },
