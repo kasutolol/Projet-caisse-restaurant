@@ -18,6 +18,7 @@ export default function MenuScreen() {
   const [selected, setSelected] = useState<{ cat: Category; item: MenuItem } | null>(null);
   const [optionValues, setOptionValues] = useState<Record<string, string[]>>({});
   const [note, setNote] = useState("");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     api("/menu").then((m: Category[]) => {
@@ -27,6 +28,19 @@ export default function MenuScreen() {
   }, []);
 
   const current = menu.find(c => c.key === activeCat);
+
+  // Search across all items (normalized, accent-insensitive)
+  const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const searchResults: { cat: Category; item: MenuItem }[] = [];
+  if (search.trim().length > 0) {
+    const q = norm(search.trim());
+    for (const c of menu) {
+      for (const it of c.items) {
+        if (norm(it.name).includes(q)) searchResults.push({ cat: c, item: it });
+      }
+    }
+  }
+  const isSearching = search.trim().length > 0;
 
   const openItem = (cat: Category, item: MenuItem) => {
     if (!item.option_groups || item.option_groups.length === 0) {
@@ -95,46 +109,96 @@ export default function MenuScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catBar} contentContainerStyle={{ paddingHorizontal: 10, gap: 8 }}>
-        {menu.map(c => {
-          const col = CATEGORY_COLORS[c.color] || CATEGORY_COLORS.boissons;
-          const isActive = activeCat === c.key;
-          return (
-            <TouchableOpacity
-              testID={`cat-${c.key}`}
-              key={c.key}
-              onPress={() => setActiveCat(c.key)}
-              style={[styles.catBtn, { backgroundColor: isActive ? col.bg : COLORS.surface, borderColor: isActive ? col.border : COLORS.border }]}
-            >
-              <Text style={[styles.catBtnText, { color: isActive ? col.text : COLORS.textSecondary }]}>{c.name}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+      <View style={styles.searchBox}>
+        <Ionicons name="search" size={18} color={COLORS.textSecondary} />
+        <TextInput
+          testID="search-input"
+          style={styles.searchInput}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Rechercher un article..."
+          placeholderTextColor={COLORS.textSecondary}
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+        {!!search && (
+          <TouchableOpacity testID="search-clear" onPress={() => setSearch("")} style={styles.clearBtn}>
+            <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        )}
+      </View>
 
-      <ScrollView contentContainerStyle={styles.itemsGrid}>
-        {current?.items.map(it => {
-          const col = CATEGORY_COLORS[current.color] || CATEGORY_COLORS.boissons;
-          const hasOpts = it.option_groups && it.option_groups.length > 0;
-          return (
-            <TouchableOpacity
-              testID={`item-${it.id}`}
-              key={it.id}
-              style={[styles.itemCard, { borderTopColor: col.border }]}
-              onPress={() => openItem(current, it)}
-              activeOpacity={0.7}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.itemName} numberOfLines={3}>{it.name}</Text>
-                {!!it.unit && <Text style={styles.itemUnit}>{it.unit}</Text>}
-              </View>
-              <View style={styles.itemFoot}>
-                <Text style={styles.itemPrice}>{fmtPrice(it.price)}</Text>
-                {hasOpts && <Ionicons name="options-outline" size={14} color={COLORS.textSecondary} />}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+      {!isSearching && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catBar} contentContainerStyle={{ paddingHorizontal: 10, gap: 8 }}>
+          {menu.map(c => {
+            const col = CATEGORY_COLORS[c.color] || CATEGORY_COLORS.boissons;
+            const isActive = activeCat === c.key;
+            return (
+              <TouchableOpacity
+                testID={`cat-${c.key}`}
+                key={c.key}
+                onPress={() => setActiveCat(c.key)}
+                style={[styles.catBtn, { backgroundColor: isActive ? col.bg : COLORS.surface, borderColor: isActive ? col.border : COLORS.border }]}
+              >
+                <Text style={[styles.catBtnText, { color: isActive ? col.text : COLORS.textSecondary }]}>{c.name}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      <ScrollView contentContainerStyle={styles.itemsGrid} keyboardShouldPersistTaps="handled">
+        {isSearching ? (
+          searchResults.length === 0 ? (
+            <Text style={styles.noResults}>Aucun article ne correspond à "{search}"</Text>
+          ) : (
+            searchResults.map(({ cat, item: it }) => {
+              const col = CATEGORY_COLORS[cat.color] || CATEGORY_COLORS.boissons;
+              const hasOpts = it.option_groups && it.option_groups.length > 0;
+              return (
+                <TouchableOpacity
+                  testID={`search-item-${it.id}`}
+                  key={it.id}
+                  style={[styles.itemCard, { borderTopColor: col.border }]}
+                  onPress={() => openItem(cat, it)}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.itemName} numberOfLines={3}>{it.name}</Text>
+                    <Text style={[styles.itemUnit, { color: col.text, fontWeight: "700" }]}>{cat.name}{it.unit ? ` · ${it.unit}` : ""}</Text>
+                  </View>
+                  <View style={styles.itemFoot}>
+                    <Text style={styles.itemPrice}>{fmtPrice(it.price)}</Text>
+                    {hasOpts && <Ionicons name="options-outline" size={14} color={COLORS.textSecondary} />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )
+        ) : (
+          current?.items.map(it => {
+            const col = CATEGORY_COLORS[current.color] || CATEGORY_COLORS.boissons;
+            const hasOpts = it.option_groups && it.option_groups.length > 0;
+            return (
+              <TouchableOpacity
+                testID={`item-${it.id}`}
+                key={it.id}
+                style={[styles.itemCard, { borderTopColor: col.border }]}
+                onPress={() => openItem(current, it)}
+                activeOpacity={0.7}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.itemName} numberOfLines={3}>{it.name}</Text>
+                  {!!it.unit && <Text style={styles.itemUnit}>{it.unit}</Text>}
+                </View>
+                <View style={styles.itemFoot}>
+                  <Text style={styles.itemPrice}>{fmtPrice(it.price)}</Text>
+                  {hasOpts && <Ionicons name="options-outline" size={14} color={COLORS.textSecondary} />}
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
       </ScrollView>
 
       <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
@@ -202,6 +266,10 @@ const styles = StyleSheet.create({
   viewOrderBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: COLORS.text, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
   viewOrderBtnText: { color: "#fff", fontWeight: "800" },
   catBar: { maxHeight: 60, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  searchBox: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  searchInput: { flex: 1, fontSize: 15, color: COLORS.text, fontWeight: "600", paddingVertical: 6 },
+  clearBtn: { padding: 2 },
+  noResults: { width: "100%", textAlign: "center", color: COLORS.textSecondary, padding: 40, fontStyle: "italic" },
   catBtn: { paddingHorizontal: 16, height: 44, borderRadius: 22, borderWidth: 2, alignItems: "center", justifyContent: "center", alignSelf: "center" },
   catBtnText: { fontWeight: "800", fontSize: 14 },
   itemsGrid: { padding: 10, flexDirection: "row", flexWrap: "wrap", gap: 8, paddingBottom: 40 },
