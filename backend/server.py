@@ -111,10 +111,29 @@ async def startup():
     logging.info("Seeded menu")
 
 
+# ============ Menu order ============
+CATEGORY_ORDER = [
+    "aperitifs",
+    "boissons_fraiches",
+    "vins_verre",
+    "tapas",
+    "entrees",
+    "plats",
+    "desserts",
+    "boissons_chaudes",
+    "vins_rouge",
+    "vins_blanc",
+    "vins_rose",
+    "champagnes",
+    "digestifs",
+]
+
+
 # ============ Menu ============
 @api_router.get("/menu")
 async def get_menu():
     cats = await db.menu.find({}, {"_id": 0}).to_list(1000)
+    cats.sort(key=lambda c: CATEGORY_ORDER.index(c["key"]) if c["key"] in CATEGORY_ORDER else 999)
     return cats
 
 
