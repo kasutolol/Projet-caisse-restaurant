@@ -122,16 +122,26 @@ export default function MenuScreen() {
     loadOrder();
   };
 
+  const addNextCourse = async () => {
+    await api(`/orders/${orderId}/next-course`, { method: "POST" });
+    triggerToast(`✓ Ligne "À SUIVRE" créée`, "next-course");
+    loadOrder();
+  };
+
   const removeItem = async (itemId: string) => {
     await api(`/orders/${orderId}/items/${itemId}`, { method: "DELETE" });
     loadOrder();
   };
 
-  // Items in current active course only (what's being added now)
-  const currentCourseItems = order?.items.filter(i => (i.course || 1) === (order?.next_course || 1)) || [];
-  const cartCount = currentCourseItems.reduce((s, i) => s + i.quantity, 0);
-  const cartTotal = currentCourseItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-  const lastItem = currentCourseItems[currentCourseItems.length - 1];
+  // Full order summary (all courses combined)
+  const allItems = order?.items || [];
+  const totalCount = allItems.reduce((s, i) => s + i.quantity, 0);
+  const totalPrice = allItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
+  // Items in current active course only (for the "last added" hint)
+  const currentCourseItems = allItems.filter(i => (i.course || 1) === (order?.next_course || 1));
+  const lastItem = currentCourseItems[currentCourseItems.length - 1] || allItems[allItems.length - 1];
+  // Group all items by course for the cart modal
+  const allCourses = Array.from(new Set(allItems.map(i => i.course || 1))).sort((a, b) => a - b);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -140,6 +150,10 @@ export default function MenuScreen() {
           <Ionicons name="chevron-back" size={28} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.title}>Menu</Text>
+        <TouchableOpacity testID="menu-next-course-btn" style={styles.nextCourseHeaderBtn} onPress={addNextCourse}>
+          <Ionicons name="arrow-forward-circle" size={18} color="#fff" />
+          <Text style={styles.nextCourseHeaderBtnText}>À suivre</Text>
+        </TouchableOpacity>
         <TouchableOpacity testID="view-order-btn" style={styles.viewOrderBtn} onPress={() => router.back()}>
           <Ionicons name="checkmark" size={18} color="#fff" />
           <Text style={styles.viewOrderBtnText}>Terminé</Text>
@@ -267,61 +281,80 @@ export default function MenuScreen() {
         </Animated.View>
       )}
 
-      {/* Sticky cart preview */}
+      {/* Sticky cart preview: shows FULL order live */}
       <TouchableOpacity
         testID="cart-preview-btn"
         activeOpacity={0.85}
         style={styles.cartBar}
-        onPress={() => cartCount > 0 && setShowCart(true)}
+        onPress={() => totalCount > 0 && setShowCart(true)}
       >
         <View style={styles.cartBadge}>
-          <Text style={styles.cartBadgeText}>{cartCount}</Text>
+          <Text style={styles.cartBadgeText}>{totalCount}</Text>
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.cartTitle}>
-            {cartCount === 0 ? "Aucun article ajouté pour l'instant" : lastItem ? `Dernier : ${lastItem.item_name}` : ""}
+            {totalCount === 0 ? "Aucun article ajouté" : `Commande : ${fmtPrice(totalPrice)}`}
           </Text>
-          <Text style={styles.cartSub}>
-            {cartCount === 0
+          <Text style={styles.cartSub} numberOfLines={1}>
+            {totalCount === 0
               ? "Touchez un produit pour l'ajouter"
-              : `${cartCount} article${cartCount > 1 ? "s" : ""} · ${fmtPrice(cartTotal)} · Touchez pour voir`}
+              : lastItem
+                ? `Dernier : ${lastItem.item_name} · ${totalCount} art. · voir détail`
+                : `${totalCount} articles`}
           </Text>
         </View>
-        {cartCount > 0 && <Ionicons name="chevron-up" size={22} color="#fff" />}
+        {totalCount > 0 && <Ionicons name="chevron-up" size={22} color="#fff" />}
       </TouchableOpacity>
 
-      {/* Cart modal: shows current course items */}
+      {/* Cart modal: shows ALL items grouped by course */}
       <Modal visible={showCart} transparent animationType="slide" onRequestClose={() => setShowCart(false)}>
         <View style={styles.modalBack}>
           <View style={styles.cartSheet}>
             <View style={styles.cartSheetHeader}>
-              <Text style={styles.cartSheetTitle}>Articles ajoutés ({cartCount})</Text>
+              <View>
+                <Text style={styles.cartSheetTitle}>Commande en cours</Text>
+                <Text style={styles.cartSheetSub}>{totalCount} article{totalCount > 1 ? "s" : ""} · {fmtPrice(totalPrice)}</Text>
+              </View>
               <TouchableOpacity onPress={() => setShowCart(false)}>
                 <Ionicons name="close" size={26} color={COLORS.text} />
               </TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 420 }}>
-              {currentCourseItems.map(it => {
-                const col = CATEGORY_COLORS[(menu.find(m => m.key === it.category_key)?.color) || "boissons"] || CATEGORY_COLORS.boissons;
+              {allCourses.map(c => {
+                const itemsOfCourse = allItems.filter(i => (i.course || 1) === c);
+                if (itemsOfCourse.length === 0) return null;
+                const isActive = c === (order?.next_course || 1);
+                const label = c === 1 ? "EN DIRECT" : `À SUIVRE ${c - 1}`;
                 return (
-                  <View key={it.id} style={[styles.cartItem, { borderLeftColor: col.border }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.cartItemName}>{it.quantity}× {it.item_name}</Text>
-                      {it.options.map((o, i) => (
-                        <Text key={i} style={styles.cartItemOpt}>· {o.group}: {o.value}</Text>
-                      ))}
+                  <View key={c} style={styles.courseGroup}>
+                    <View style={[styles.courseGroupHeader, isActive && styles.courseGroupHeaderActive]}>
+                      <Ionicons name={c === 1 ? "flash" : "arrow-forward-circle"} size={14} color={isActive ? "#fff" : COLORS.text} />
+                      <Text style={[styles.courseGroupLabel, isActive && { color: "#fff" }]}>{label}</Text>
                     </View>
-                    <Text style={styles.cartItemPrice}>{fmtPrice(it.unit_price * it.quantity)}</Text>
-                    <TouchableOpacity onPress={() => removeItem(it.id)} style={styles.cartRemove}>
-                      <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
-                    </TouchableOpacity>
+                    {itemsOfCourse.map(it => {
+                      const col = CATEGORY_COLORS[(menu.find(m => m.key === it.category_key)?.color) || "boissons"] || CATEGORY_COLORS.boissons;
+                      return (
+                        <View key={it.id} style={[styles.cartItem, { borderLeftColor: col.border }]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.cartItemName}>{it.quantity}× {it.item_name}</Text>
+                            {it.options.map((o, i) => (
+                              <Text key={i} style={styles.cartItemOpt}>· {o.group}: {o.value}</Text>
+                            ))}
+                          </View>
+                          <Text style={styles.cartItemPrice}>{fmtPrice(it.unit_price * it.quantity)}</Text>
+                          <TouchableOpacity onPress={() => removeItem(it.id)} style={styles.cartRemove}>
+                            <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
                   </View>
                 );
               })}
             </ScrollView>
             <View style={styles.cartTotalRow}>
-              <Text style={styles.cartTotalLabel}>Total ajouté</Text>
-              <Text style={styles.cartTotalValue}>{fmtPrice(cartTotal)}</Text>
+              <Text style={styles.cartTotalLabel}>TOTAL</Text>
+              <Text style={styles.cartTotalValue}>{fmtPrice(totalPrice)}</Text>
             </View>
             <TouchableOpacity style={styles.cartCloseBtn} onPress={() => setShowCart(false)}>
               <Text style={styles.cartCloseBtnText}>Continuer à commander</Text>
@@ -396,8 +429,10 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", padding: 12, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 8 },
   backBtn: { padding: 4 },
   title: { flex: 1, fontSize: 22, fontWeight: "900", color: COLORS.text },
-  viewOrderBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: COLORS.success, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
-  viewOrderBtnText: { color: "#fff", fontWeight: "800" },
+  nextCourseHeaderBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: COLORS.primary, paddingHorizontal: 10, paddingVertical: 10, borderRadius: 10 },
+  nextCourseHeaderBtnText: { color: "#fff", fontWeight: "800", fontSize: 13 },
+  viewOrderBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: COLORS.success, paddingHorizontal: 10, paddingVertical: 10, borderRadius: 10 },
+  viewOrderBtnText: { color: "#fff", fontWeight: "800", fontSize: 13 },
   catBar: { maxHeight: 60, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   searchBox: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   searchInput: { flex: 1, fontSize: 15, color: COLORS.text, fontWeight: "600", paddingVertical: 6 },
@@ -426,6 +461,11 @@ const styles = StyleSheet.create({
   cartSheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "85%" },
   cartSheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
   cartSheetTitle: { fontSize: 20, fontWeight: "900", color: COLORS.text },
+  cartSheetSub: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
+  courseGroup: { marginBottom: 10 },
+  courseGroupHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: COLORS.bg, borderRadius: 6, marginBottom: 4 },
+  courseGroupHeaderActive: { backgroundColor: COLORS.primary },
+  courseGroupLabel: { fontSize: 11, fontWeight: "900", letterSpacing: 0.8, color: COLORS.text },
   cartItem: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingLeft: 10, borderLeftWidth: 4, marginBottom: 6, gap: 8 },
   cartItemName: { fontSize: 14, fontWeight: "700", color: COLORS.text },
   cartItemOpt: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
