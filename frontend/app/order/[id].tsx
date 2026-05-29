@@ -1,9 +1,9 @@
 import { useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { api, COLORS, fmtPrice } from "@/src/api";
+import { api, COLORS, CATEGORY_COLORS, fmtPrice } from "@/src/api";
 
 type OrderItem = {
   id: string; item_name: string; category_key: string; unit_price: number;
@@ -15,6 +15,24 @@ type Order = {
   items: OrderItem[]; total: number; next_course: number;
 };
 
+// Catégorie key -> color group (must match menu seed)
+const CAT_TO_COLOR_GROUP: Record<string, string> = {
+  aperitifs: "aperitifs_tapas",
+  tapas: "aperitifs_tapas",
+  entrees: "entrees",
+  plats: "plats",
+  desserts: "desserts",
+  boissons_fraiches: "boissons",
+  boissons_chaudes: "cafes_digestifs",
+  vins_verre: "vins",
+  vins_rouge: "vins",
+  vins_blanc: "vins",
+  vins_rose: "vins",
+  champagnes: "vins",
+  digestifs: "cafes_digestifs",
+};
+const itemColor = (key: string) => CATEGORY_COLORS[CAT_TO_COLOR_GROUP[key] || "boissons"];
+
 export default function OrderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -23,6 +41,7 @@ export default function OrderScreen() {
   const [coversModal, setCoversModal] = useState(false);
   const [newCovers, setNewCovers] = useState("2");
   const [moveItem, setMoveItem] = useState<OrderItem | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -115,45 +134,77 @@ export default function OrderScreen() {
         {courses.map(c => {
           const itemsOfCourse = order.items.filter(i => (i.course || 1) === c);
           const isActive = c === order.next_course;
-          const label = c === 1 ? "1ʳᵉ TOURNÉE" : `À SUIVRE — ${c}`;
+          const label = c === 1 ? "EN DIRECT" : `À SUIVRE ${c - 1}`;
+          const isDropTarget = !!draggingId;
           return (
             <View key={c} style={styles.courseBlock}>
-              <View style={[styles.courseHeader, isActive && styles.courseHeaderActive]}>
-                <Ionicons name={c === 1 ? "flag" : "arrow-forward-circle"} size={16} color={isActive ? "#fff" : COLORS.text} />
-                <Text style={[styles.courseLabel, isActive && styles.courseLabelActive]}>{label}</Text>
-                {isActive && <Text style={[styles.courseTag]}>articles ajoutés ici</Text>}
-              </View>
+              <Pressable
+                onPress={() => isDropTarget && moveItemToCourse(c)}
+                style={[
+                  styles.courseHeader,
+                  isActive && styles.courseHeaderActive,
+                  isDropTarget && styles.courseHeaderDrop,
+                ]}
+              >
+                <Ionicons
+                  name={isDropTarget ? "download" : c === 1 ? "flash" : "arrow-forward-circle"}
+                  size={16}
+                  color={isDropTarget ? COLORS.primary : isActive ? "#fff" : COLORS.text}
+                />
+                <Text style={[
+                  styles.courseLabel,
+                  isActive && styles.courseLabelActive,
+                  isDropTarget && styles.courseLabelDrop,
+                ]}>
+                  {isDropTarget ? `↓ Déposer dans "${label}"` : label}
+                </Text>
+                {isActive && !isDropTarget && <Text style={styles.courseTag}>articles ajoutés ici</Text>}
+              </Pressable>
               {itemsOfCourse.length === 0 ? (
                 <Text style={styles.coursePlaceholder}>(vide — les prochains articles iront ici)</Text>
               ) : (
-                itemsOfCourse.map(it => (
-                  <View key={it.id} testID={`order-item-${it.id}`} style={[styles.item, !it.sent && styles.itemPending]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemName}>{it.item_name}</Text>
-                      {it.options.map((o, i) => (
-                        <Text key={i} style={styles.opt}>· {o.group}: {o.value}</Text>
-                      ))}
-                      {!!it.note && <Text style={styles.note}>Note: {it.note}</Text>}
-                      {!it.sent && <Text style={styles.pendingTag}>NOUVEAU</Text>}
-                    </View>
-                    <View style={styles.qtyBox}>
-                      <TouchableOpacity onPress={() => updateQty(it.id, it.quantity - 1)} style={styles.qBtn}>
-                        <Ionicons name="remove" size={18} color={COLORS.text} />
-                      </TouchableOpacity>
-                      <Text style={styles.qty}>{it.quantity}</Text>
-                      <TouchableOpacity onPress={() => updateQty(it.id, it.quantity + 1)} style={styles.qBtn}>
-                        <Ionicons name="add" size={18} color={COLORS.text} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={{ alignItems: "flex-end" }}>
-                      <Text style={styles.price}>{fmtPrice(it.unit_price * it.quantity)}</Text>
-                      <TouchableOpacity testID={`move-${it.id}`} onPress={() => setMoveItem(it)} style={styles.moveBtn}>
-                        <Ionicons name="swap-vertical" size={14} color={COLORS.primary} />
-                        <Text style={styles.moveBtnText}>Déplacer</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))
+                itemsOfCourse.map(it => {
+                  const col = itemColor(it.category_key);
+                  const isDragging = draggingId === it.id;
+                  return (
+                    <Pressable
+                      key={it.id}
+                      testID={`order-item-${it.id}`}
+                      onLongPress={() => setDraggingId(it.id)}
+                      onPress={() => isDragging && setDraggingId(null)}
+                      delayLongPress={400}
+                      style={[
+                        styles.item,
+                        { borderLeftColor: col.border, borderLeftWidth: 5, backgroundColor: col.bg },
+                        !it.sent && styles.itemPending,
+                        isDragging && styles.itemDragging,
+                      ]}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.itemName, { color: col.text }]}>{it.item_name}</Text>
+                        {it.options.map((o, i) => (
+                          <Text key={i} style={[styles.opt, { color: col.text, opacity: 0.75 }]}>· {o.group}: {o.value}</Text>
+                        ))}
+                        {!!it.note && <Text style={styles.note}>Note: {it.note}</Text>}
+                        {isDragging ? (
+                          <Text style={styles.draggingTag}>✋ MAINTENU — touchez une ligne pour déposer</Text>
+                        ) : (
+                          !it.sent && <Text style={styles.pendingTag}>NOUVEAU</Text>
+                        )}
+                      </View>
+                      <View style={styles.qtyBox}>
+                        <TouchableOpacity onPress={() => updateQty(it.id, it.quantity - 1)} style={styles.qBtn}>
+                          <Ionicons name="remove" size={18} color={COLORS.text} />
+                        </TouchableOpacity>
+                        <Text style={styles.qty}>{it.quantity}</Text>
+                        <TouchableOpacity onPress={() => updateQty(it.id, it.quantity + 1)} style={styles.qBtn}>
+                          <Ionicons name="add" size={18} color={COLORS.text} />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={[styles.price, { color: col.text }]}>{fmtPrice(it.unit_price * it.quantity)}</Text>
+                    </Pressable>
+                  );
+                })
               )}
             </View>
           );
@@ -186,7 +237,7 @@ export default function OrderScreen() {
         </View>
       </View>
 
-      {/* Move item modal */}
+      {/* Move item modal - kept as fallback */}
       <Modal visible={!!moveItem} transparent animationType="fade" onRequestClose={() => setMoveItem(null)}>
         <View style={styles.modalBack}>
           <View style={styles.modalCard}>
@@ -201,7 +252,7 @@ export default function OrderScreen() {
                   style={[styles.courseChip, moveItem?.course === c && styles.courseChipCurrent]}
                   onPress={() => moveItemToCourse(c)}
                 >
-                  <Text style={styles.courseChipText}>{c === 1 ? "1ʳᵉ tournée" : `À suivre ${c}`}</Text>
+                  <Text style={styles.courseChipText}>{c === 1 ? "EN DIRECT" : `À suivre ${c - 1}`}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -284,14 +335,18 @@ const styles = StyleSheet.create({
   empty: { alignItems: "center", marginTop: 60, gap: 12 },
   emptyText: { color: COLORS.textSecondary, textAlign: "center", paddingHorizontal: 40 },
   courseBlock: { marginBottom: 14 },
-  courseHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: COLORS.bg, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: COLORS.text, marginBottom: 6 },
+  courseHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: COLORS.bg, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: COLORS.text, marginBottom: 6 },
   courseHeaderActive: { backgroundColor: COLORS.primary, borderLeftColor: COLORS.primaryDark },
+  courseHeaderDrop: { backgroundColor: "#FEF3C7", borderLeftColor: COLORS.warning, borderWidth: 2, borderColor: COLORS.warning, paddingVertical: 14 },
   courseLabel: { fontSize: 12, fontWeight: "900", letterSpacing: 1, color: COLORS.text, flex: 1 },
   courseLabelActive: { color: "#fff" },
+  courseLabelDrop: { color: COLORS.primary, fontSize: 13 },
   courseTag: { fontSize: 10, fontWeight: "700", color: "#fff", opacity: 0.85 },
   coursePlaceholder: { fontSize: 12, color: COLORS.textSecondary, fontStyle: "italic", paddingHorizontal: 12, paddingVertical: 8 },
-  item: { flexDirection: "row", alignItems: "center", backgroundColor: COLORS.surface, padding: 12, borderRadius: 12, marginBottom: 6, gap: 8, borderWidth: 1, borderColor: COLORS.border },
+  item: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 12, marginBottom: 6, gap: 8, borderWidth: 1, borderColor: COLORS.border },
   itemPending: { borderColor: COLORS.primary, borderWidth: 2 },
+  itemDragging: { borderColor: COLORS.warning, borderWidth: 3, transform: [{ scale: 1.02 }], shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  draggingTag: { fontSize: 10, fontWeight: "900", color: COLORS.warning, marginTop: 4, letterSpacing: 0.5 },
   itemName: { fontSize: 15, fontWeight: "700", color: COLORS.text },
   opt: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
   note: { fontSize: 12, color: COLORS.warning, marginTop: 2, fontStyle: "italic" },
@@ -335,6 +390,10 @@ const styles = StyleSheet.create({
   coverChips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
   chip: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: COLORS.border, alignItems: "center", justifyContent: "center" },
   chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  chipText: { fontWeight: "800", color: COLORS.text },
+  chipTextActive: { color: "#fff" },
+});
+ve: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   chipText: { fontWeight: "800", color: COLORS.text },
   chipTextActive: { color: "#fff" },
 });
