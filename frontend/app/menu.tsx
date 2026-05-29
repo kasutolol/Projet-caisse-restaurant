@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Alert } from "react-native";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Alert, Animated, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -9,6 +9,11 @@ type Choice = string;
 type OptionGroup = { name: string; type: "single" | "multi"; required?: boolean; max?: number; choices: Choice[] };
 type MenuItem = { id: string; name: string; price: number; unit?: string; option_groups?: OptionGroup[] };
 type Category = { key: string; name: string; color: string; icon: string; items: MenuItem[] };
+type OrderItem = {
+  id: string; item_name: string; category_key: string; unit_price: number;
+  quantity: number; options: { group: string; value: string }[]; course: number;
+};
+type Order = { id: string; items: OrderItem[]; total: number; next_course: number };
 
 export default function MenuScreen() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
@@ -19,17 +24,27 @@ export default function MenuScreen() {
   const [optionValues, setOptionValues] = useState<Record<string, string[]>>({});
   const [note, setNote] = useState("");
   const [search, setSearch] = useState("");
+  const [order, setOrder] = useState<Order | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [showCart, setShowCart] = useState(false);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+
+  const loadOrder = useCallback(async () => {
+    if (!orderId) return;
+    try { setOrder(await api(`/orders/${orderId}`)); } catch (e) {}
+  }, [orderId]);
 
   useEffect(() => {
     api("/menu").then((m: Category[]) => {
       setMenu(m);
       if (m.length) setActiveCat(m[0].key);
     });
-  }, []);
+    loadOrder();
+  }, [loadOrder]);
 
   const current = menu.find(c => c.key === activeCat);
 
-  // Search across all items (normalized, accent-insensitive)
   const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const searchResults: { cat: Category; item: MenuItem }[] = [];
   if (search.trim().length > 0) {
@@ -41,6 +56,18 @@ export default function MenuScreen() {
     }
   }
   const isSearching = search.trim().length > 0;
+
+  const triggerToast = (text: string, itemId: string) => {
+    setToast(text);
+    setFlashId(itemId);
+    toastAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(toastAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.delay(1100),
+      Animated.timing(toastAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+    ]).start(() => setToast(null));
+    setTimeout(() => setFlashId(null), 500);
+  };
 
   const openItem = (cat: Category, item: MenuItem) => {
     if (!item.option_groups || item.option_groups.length === 0) {
@@ -56,7 +83,6 @@ export default function MenuScreen() {
     setOptionValues(prev => {
       const cur = prev[group.name] || [];
       if (group.type === "single") return { ...prev, [group.name]: [choice] };
-      // multi
       if (cur.includes(choice)) return { ...prev, [group.name]: cur.filter(c => c !== choice) };
       if (group.max && cur.length >= group.max) return prev;
       return { ...prev, [group.name]: [...cur, choice] };
@@ -66,7 +92,6 @@ export default function MenuScreen() {
   const confirmAdd = () => {
     if (!selected) return;
     const { cat, item } = selected;
-    // validate required
     for (const g of item.option_groups || []) {
       if (g.required && (!optionValues[g.name] || optionValues[g.name].length === 0)) {
         Alert.alert("Choix obligatoire", `Sélectionnez : ${g.name}`);
@@ -82,6 +107,7 @@ export default function MenuScreen() {
   };
 
   const addItem = async (cat: Category, item: MenuItem, options: any[], n: string) => {
+    triggerToast(`+1 ${item.name}`, item.id);
     await api(`/orders/${orderId}/items`, {
       method: "POST",
       body: JSON.stringify({
@@ -93,8 +119,19 @@ export default function MenuScreen() {
         note: n,
       }),
     });
-    // give haptic-like feedback: brief flash via Alert? Skip - just return.
+    loadOrder();
   };
+
+  const removeItem = async (itemId: string) => {
+    await api(`/orders/${orderId}/items/${itemId}`, { method: "DELETE" });
+    loadOrder();
+  };
+
+  // Items in current active course only (what's being added now)
+  const currentCourseItems = order?.items.filter(i => (i.course || 1) === (order?.next_course || 1)) || [];
+  const cartCount = currentCourseItems.reduce((s, i) => s + i.quantity, 0);
+  const cartTotal = currentCourseItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
+  const lastItem = currentCourseItems[currentCourseItems.length - 1];
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -104,8 +141,8 @@ export default function MenuScreen() {
         </TouchableOpacity>
         <Text style={styles.title}>Menu</Text>
         <TouchableOpacity testID="view-order-btn" style={styles.viewOrderBtn} onPress={() => router.back()}>
-          <Ionicons name="receipt" size={18} color="#fff" />
-          <Text style={styles.viewOrderBtnText}>Commande</Text>
+          <Ionicons name="checkmark" size={18} color="#fff" />
+          <Text style={styles.viewOrderBtnText}>Terminé</Text>
         </TouchableOpacity>
       </View>
 
@@ -147,7 +184,7 @@ export default function MenuScreen() {
         </ScrollView>
       )}
 
-      <ScrollView contentContainerStyle={styles.itemsGrid} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.itemsGrid, { paddingBottom: 120 }]} keyboardShouldPersistTaps="handled">
         {isSearching ? (
           searchResults.length === 0 ? (
             <Text style={styles.noResults}>Aucun article ne correspond à "{search}"</Text>
@@ -155,13 +192,18 @@ export default function MenuScreen() {
             searchResults.map(({ cat, item: it }) => {
               const col = CATEGORY_COLORS[cat.color] || CATEGORY_COLORS.boissons;
               const hasOpts = it.option_groups && it.option_groups.length > 0;
+              const isFlashing = flashId === it.id;
               return (
-                <TouchableOpacity
+                <Pressable
                   testID={`search-item-${it.id}`}
                   key={it.id}
-                  style={[styles.itemCard, { borderTopColor: col.border }]}
+                  style={({ pressed }) => [
+                    styles.itemCard,
+                    { borderTopColor: col.border },
+                    pressed && styles.itemCardPressed,
+                    isFlashing && styles.itemCardFlash,
+                  ]}
                   onPress={() => openItem(cat, it)}
-                  activeOpacity={0.7}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.itemName} numberOfLines={3}>{it.name}</Text>
@@ -171,7 +213,7 @@ export default function MenuScreen() {
                     <Text style={styles.itemPrice}>{fmtPrice(it.price)}</Text>
                     {hasOpts && <Ionicons name="options-outline" size={14} color={COLORS.textSecondary} />}
                   </View>
-                </TouchableOpacity>
+                </Pressable>
               );
             })
           )
@@ -179,13 +221,18 @@ export default function MenuScreen() {
           current?.items.map(it => {
             const col = CATEGORY_COLORS[current.color] || CATEGORY_COLORS.boissons;
             const hasOpts = it.option_groups && it.option_groups.length > 0;
+            const isFlashing = flashId === it.id;
             return (
-              <TouchableOpacity
+              <Pressable
                 testID={`item-${it.id}`}
                 key={it.id}
-                style={[styles.itemCard, { borderTopColor: col.border }]}
+                style={({ pressed }) => [
+                  styles.itemCard,
+                  { borderTopColor: col.border },
+                  pressed && styles.itemCardPressed,
+                  isFlashing && styles.itemCardFlash,
+                ]}
                 onPress={() => openItem(current, it)}
-                activeOpacity={0.7}
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemName} numberOfLines={3}>{it.name}</Text>
@@ -195,12 +242,98 @@ export default function MenuScreen() {
                   <Text style={styles.itemPrice}>{fmtPrice(it.price)}</Text>
                   {hasOpts && <Ionicons name="options-outline" size={14} color={COLORS.textSecondary} />}
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             );
           })
         )}
       </ScrollView>
 
+      {/* Floating toast */}
+      {toast && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.toast,
+            {
+              opacity: toastAnim,
+              transform: [{
+                translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }),
+              }],
+            },
+          ]}
+        >
+          <Ionicons name="checkmark-circle" size={20} color="#fff" />
+          <Text style={styles.toastText}>{toast}</Text>
+        </Animated.View>
+      )}
+
+      {/* Sticky cart preview */}
+      <TouchableOpacity
+        testID="cart-preview-btn"
+        activeOpacity={0.85}
+        style={styles.cartBar}
+        onPress={() => cartCount > 0 && setShowCart(true)}
+      >
+        <View style={styles.cartBadge}>
+          <Text style={styles.cartBadgeText}>{cartCount}</Text>
+        </View>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={styles.cartTitle}>
+            {cartCount === 0 ? "Aucun article ajouté pour l'instant" : lastItem ? `Dernier : ${lastItem.item_name}` : ""}
+          </Text>
+          <Text style={styles.cartSub}>
+            {cartCount === 0
+              ? "Touchez un produit pour l'ajouter"
+              : `${cartCount} article${cartCount > 1 ? "s" : ""} · ${fmtPrice(cartTotal)} · Touchez pour voir`}
+          </Text>
+        </View>
+        {cartCount > 0 && <Ionicons name="chevron-up" size={22} color="#fff" />}
+      </TouchableOpacity>
+
+      {/* Cart modal: shows current course items */}
+      <Modal visible={showCart} transparent animationType="slide" onRequestClose={() => setShowCart(false)}>
+        <View style={styles.modalBack}>
+          <View style={styles.cartSheet}>
+            <View style={styles.cartSheetHeader}>
+              <Text style={styles.cartSheetTitle}>Articles ajoutés ({cartCount})</Text>
+              <TouchableOpacity onPress={() => setShowCart(false)}>
+                <Ionicons name="close" size={26} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 420 }}>
+              {currentCourseItems.map(it => {
+                const col = CATEGORY_COLORS[(menu.find(m => m.key === it.category_key)?.color) || "boissons"] || CATEGORY_COLORS.boissons;
+                return (
+                  <View key={it.id} style={[styles.cartItem, { borderLeftColor: col.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.cartItemName}>{it.quantity}× {it.item_name}</Text>
+                      {it.options.map((o, i) => (
+                        <Text key={i} style={styles.cartItemOpt}>· {o.group}: {o.value}</Text>
+                      ))}
+                    </View>
+                    <Text style={styles.cartItemPrice}>{fmtPrice(it.unit_price * it.quantity)}</Text>
+                    <TouchableOpacity onPress={() => removeItem(it.id)} style={styles.cartRemove}>
+                      <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <View style={styles.cartTotalRow}>
+              <Text style={styles.cartTotalLabel}>Total ajouté</Text>
+              <Text style={styles.cartTotalValue}>{fmtPrice(cartTotal)}</Text>
+            </View>
+            <TouchableOpacity style={styles.cartCloseBtn} onPress={() => setShowCart(false)}>
+              <Text style={styles.cartCloseBtnText}>Continuer à commander</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.cartCloseBtn, styles.cartDoneBtn]} onPress={() => { setShowCart(false); router.back(); }}>
+              <Text style={styles.cartDoneBtnText}>✓ Terminé, voir la commande</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Options sheet */}
       <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
         <View style={styles.modalBack}>
           <View style={styles.sheet}>
@@ -263,7 +396,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", padding: 12, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 8 },
   backBtn: { padding: 4 },
   title: { flex: 1, fontSize: 22, fontWeight: "900", color: COLORS.text },
-  viewOrderBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: COLORS.text, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
+  viewOrderBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: COLORS.success, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
   viewOrderBtnText: { color: "#fff", fontWeight: "800" },
   catBar: { maxHeight: 60, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   searchBox: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
@@ -272,12 +405,40 @@ const styles = StyleSheet.create({
   noResults: { width: "100%", textAlign: "center", color: COLORS.textSecondary, padding: 40, fontStyle: "italic" },
   catBtn: { paddingHorizontal: 16, height: 44, borderRadius: 22, borderWidth: 2, alignItems: "center", justifyContent: "center", alignSelf: "center" },
   catBtnText: { fontWeight: "800", fontSize: 14 },
-  itemsGrid: { padding: 10, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 8, paddingBottom: 40 },
+  itemsGrid: { padding: 10, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 8 },
   itemCard: { width: "48.5%", minHeight: 100, backgroundColor: COLORS.surface, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, borderTopWidth: 4, padding: 10, justifyContent: "space-between" },
+  itemCardPressed: { transform: [{ scale: 0.96 }], opacity: 0.85 },
+  itemCardFlash: { backgroundColor: COLORS.successBg, borderColor: COLORS.success, borderWidth: 2 },
   itemName: { fontSize: 13, fontWeight: "700", color: COLORS.text, lineHeight: 17 },
   itemUnit: { fontSize: 11, color: COLORS.textSecondary, marginTop: 2 },
   itemFoot: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 6 },
   itemPrice: { fontWeight: "900", fontSize: 14, color: COLORS.text },
+  // Toast
+  toast: { position: "absolute", alignSelf: "center", bottom: 95, backgroundColor: COLORS.success, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 24, flexDirection: "row", alignItems: "center", gap: 8, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  toastText: { color: "#fff", fontWeight: "800", fontSize: 15 },
+  // Cart bar
+  cartBar: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: COLORS.text, padding: 14, paddingBottom: 22, flexDirection: "row", alignItems: "center" },
+  cartBadge: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center" },
+  cartBadgeText: { color: "#fff", fontWeight: "900", fontSize: 16 },
+  cartTitle: { color: "#fff", fontWeight: "800", fontSize: 14 },
+  cartSub: { color: "#A1A1AA", fontSize: 12, marginTop: 2 },
+  // Cart sheet
+  cartSheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "85%" },
+  cartSheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
+  cartSheetTitle: { fontSize: 20, fontWeight: "900", color: COLORS.text },
+  cartItem: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingLeft: 10, borderLeftWidth: 4, marginBottom: 6, gap: 8 },
+  cartItemName: { fontSize: 14, fontWeight: "700", color: COLORS.text },
+  cartItemOpt: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
+  cartItemPrice: { fontSize: 14, fontWeight: "800", color: COLORS.text },
+  cartRemove: { padding: 6 },
+  cartTotalRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border },
+  cartTotalLabel: { fontSize: 14, fontWeight: "800", color: COLORS.textSecondary, letterSpacing: 0.5 },
+  cartTotalValue: { fontSize: 22, fontWeight: "900", color: COLORS.text },
+  cartCloseBtn: { backgroundColor: COLORS.bg, padding: 16, borderRadius: 12, alignItems: "center", marginTop: 10 },
+  cartCloseBtnText: { fontWeight: "800", color: COLORS.text, fontSize: 15 },
+  cartDoneBtn: { backgroundColor: COLORS.success },
+  cartDoneBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
+  // Options modal
   modalBack: { flex: 1, backgroundColor: "rgba(9,9,11,0.6)", justifyContent: "flex-end" },
   sheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "90%" },
   sheetTitle: { fontSize: 22, fontWeight: "900", color: COLORS.text },
