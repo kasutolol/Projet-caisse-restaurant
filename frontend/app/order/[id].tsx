@@ -393,7 +393,3 @@ const styles = StyleSheet.create({
   chipText: { fontWeight: "800", color: COLORS.text },
   chipTextActive: { color: "#fff" },
 });
-ve: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  chipText: { fontWeight: "800", color: COLORS.text },
-  chipTextActive: { color: "#fff" },
-});
