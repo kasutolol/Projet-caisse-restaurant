@@ -84,24 +84,22 @@ export default function Index() {
         >
           <View style={styles.openBox}>
             <Text style={styles.openBoxLabel}>Ouvrir / Reprendre une table</Text>
-            <View style={styles.openRow}>
-              <TextInput
-                testID="table-number-input"
-                style={styles.tableInput}
-                value={tableNum}
-                onChangeText={setTableNum}
-                placeholder="N°"
-                placeholderTextColor="#A1A1AA"
-                keyboardType="number-pad"
-                returnKeyType="go"
-                onSubmitEditing={openTableByNumber}
-                maxLength={4}
-              />
-              <TouchableOpacity testID="open-table-btn" style={styles.openBtn} onPress={openTableByNumber} activeOpacity={0.8}>
-                <Ionicons name="arrow-forward" size={22} color="#fff" />
-                <Text style={styles.openBtnText}>Ouvrir</Text>
-              </TouchableOpacity>
-            </View>
+            <TextInput
+              testID="table-number-input"
+              style={styles.tableInput}
+              value={tableNum}
+              onChangeText={setTableNum}
+              placeholder="N°"
+              placeholderTextColor="#A1A1AA"
+              keyboardType="number-pad"
+              returnKeyType="go"
+              onSubmitEditing={openTableByNumber}
+              maxLength={4}
+            />
+            <TouchableOpacity testID="open-table-btn" style={styles.openBtn} onPress={openTableByNumber} activeOpacity={0.8}>
+              <Ionicons name="arrow-forward" size={22} color="#fff" />
+              <Text style={styles.openBtnText}>Ouvrir la table</Text>
+            </TouchableOpacity>
           </View>
 
           <Text style={styles.sectionTitle}>Tables en cours</Text>
@@ -178,8 +176,8 @@ const styles = StyleSheet.create({
   openBox: { backgroundColor: COLORS.surface, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, marginBottom: 22 },
   openBoxLabel: { fontSize: 12, fontWeight: "800", color: COLORS.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
   openRow: { flexDirection: "row", gap: 8 },
-  tableInput: { flex: 1, borderWidth: 2, borderColor: COLORS.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, fontSize: 26, fontWeight: "900", color: COLORS.text, textAlign: "center" },
-  openBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: COLORS.primary, paddingHorizontal: 18, borderRadius: 14 },
+  tableInput: { borderWidth: 2, borderColor: COLORS.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 16, fontSize: 32, fontWeight: "900", color: COLORS.text, textAlign: "center" },
+  openBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: COLORS.primary, paddingVertical: 16, borderRadius: 14, marginTop: 10 },
   openBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
   sectionTitle: { fontSize: 13, fontWeight: "800", color: COLORS.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
   empty: { alignItems: "center", marginTop: 30, gap: 10, padding: 20 },
