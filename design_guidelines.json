@@ -1,0 +1,135 @@
+{
+  "theme": "Light",
+  "archetype": "Archetype 4 (Swiss & High-Contrast - POS Variant)",
+  "rationale": "For a fast-paced restaurant environment, efficiency is paramount. We prioritize extreme clarity, large touch targets, high contrast, and logical color-coding over decorative elements. The 'Swiss & High Contrast' archetype provides a stark, functional, and authoritative interface that reduces cognitive load for servers on the move.",
+  "colors": {
+    "background": {
+      "app": "#F4F4F5",
+      "surface": "#FFFFFF",
+      "overlay": "rgba(9, 9, 11, 0.6)"
+    },
+    "text": {
+      "primary": "#09090B",
+      "secondary": "#52525B",
+      "inverse": "#FFFFFF",
+      "disabled": "#A1A1AA"
+    },
+    "primary": {
+      "DEFAULT": "#0055FF",
+      "hover": "#0044CC",
+      "active": "#003399",
+      "foreground": "#FFFFFF"
+    },
+    "status": {
+      "table_free": {
+        "bg": "#DCFCE7",
+        "border": "#22C55E",
+        "text": "#14532D"
+      },
+      "table_occupied": {
+        "bg": "#FEF3C7",
+        "border": "#F59E0B",
+        "text": "#78350F"
+      }
+    },
+    "categories": {
+      "aperitifs_tapas": { "bg": "#FFEDD5", "border": "#F97316", "text": "#7C2D12" },
+      "entrees": { "bg": "#ECFCCB", "border": "#84CC16", "text": "#3F6212" },
+      "plats": { "bg": "#FEE2E2", "border": "#EF4444", "text": "#7F1D1D" },
+      "vins": { "bg": "#FFE4E6", "border": "#E11D48", "text": "#881337" },
+      "boissons": { "bg": "#E0F2FE", "border": "#0EA5E9", "text": "#0C4A6E" },
+      "desserts": { "bg": "#FAE8FF", "border": "#D946EF", "text": "#701A75" },
+      "cafes_digestifs": { "bg": "#FEF3C7", "border": "#D97706", "text": "#78350F" }
+    }
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Chivo, sans-serif",
+      "body": "IBM Plex Sans, sans-serif"
+    },
+    "hierarchy": {
+      "h1": "text-4xl font-black tracking-tighter text-primary-900",
+      "h2": "text-2xl font-bold tracking-tight text-zinc-900",
+      "h3": "text-xl font-bold text-zinc-900",
+      "category_label": "text-lg font-bold tracking-tight",
+      "item_title": "text-base font-semibold leading-snug",
+      "item_price": "text-base font-bold",
+      "modifier_label": "text-xs font-bold uppercase tracking-[0.1em] text-zinc-500",
+      "body": "text-base font-normal leading-relaxed text-zinc-700"
+    }
+  },
+  "layout_and_spacing": {
+    "strategy": "Control Room Grid (Dense, structural, large hit areas)",
+    "container": "w-full max-w-md mx-auto h-screen flex flex-col bg-zinc-50 overflow-hidden relative",
+    "header": "h-16 flex items-center justify-between px-4 bg-white border-b border-zinc-200 shrink-0",
+    "grids": {
+      "tables": "grid grid-cols-3 gap-4 p-4",
+      "categories": "flex overflow-x-auto gap-3 p-4 pb-2 snap-x hide-scrollbar",
+      "items": "grid grid-cols-2 gap-3 p-4 pb-32"
+    },
+    "touch_targets": {
+      "minimum_height": "min-h-[80px]",
+      "table_card": "h-24 w-full rounded-xl flex flex-col items-center justify-center border-2",
+      "category_tab": "h-16 px-6 rounded-lg whitespace-nowrap flex items-center justify-center font-bold text-lg border-2 snap-start",
+      "item_card": "h-28 p-3 rounded-xl border flex flex-col justify-between active:scale-95 transition-transform bg-white",
+      "modifier_chip": "h-12 px-4 rounded-full border-2 flex items-center justify-center active:bg-zinc-100"
+    }
+  },
+  "components": {
+    "TableCard": {
+      "description": "Grid tile for tables. Status determines color.",
+      "states": {
+        "free": "bg-green-50 border-green-500 text-green-900",
+        "occupied": "bg-amber-50 border-amber-500 text-amber-900"
+      },
+      "content": "Table Number (large), Couverts (small icon + number)"
+    },
+    "CategoryBar": {
+      "description": "Horizontal scrollable list of main categories. Active category has distinct background/border based on the category color map. Inactive is zinc-100/zinc-300."
+    },
+    "ItemCard": {
+      "description": "Grid tile for a menu item. Shows name, price, and an indicator if options (cuisson, sauce) are required. Simple white background, subtle border, strong shadow on press.",
+      "interaction": "Tap adds to cart instantly, OR opens Modifier Drawer if options exist."
+    },
+    "ModifierDrawer": {
+      "description": "Shadcn Drawer component acting as a bottom sheet. Slides up instantly. Contains grids of 'modifier chips' (e.g., 'Saignant', 'À point', 'Bien cuit').",
+      "action": "Must have a giant, sticky 'Valider' button at the bottom."
+    },
+    "FloatingCartIndicator": {
+      "description": "Fixed at the bottom of the screen. Full width minus margins. Dark blue or black background, white text. Shows total items, total price, and 'Voir Commande'. Tapping opens the Cart Sheet."
+    },
+    "CartSheet": {
+      "description": "Right-side sliding panel or full-screen drawer showing current table's order. List of items with '+' and '-' controls. Clear breakdown of sub-categories below each item."
+    }
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "usage": "Use Phosphor icons (bold or regular weight) for intuitive scanning.",
+    "mapping": {
+      "tables": "Armchair",
+      "users": "Users",
+      "cart": "Receipt",
+      "add": "Plus",
+      "remove": "Minus",
+      "options": "SlidersHorizontal",
+      "close": "X",
+      "search": "MagnifyingGlass"
+    }
+  },
+  "interactions": {
+    "tactile_feedback": "All touch targets must have an active state (e.g., active:scale-[0.98] active:opacity-80) to provide immediate visual confirmation of the tap, simulating physical buttons.",
+    "animations": "Keep transitions under 150ms. Efficiency means no long, sweeping animations. Drawers slide in < 200ms.",
+    "accessibility": "Contrast ratios strictly above 4.5:1. Modifiers are distinct and explicitly labeled. Tap targets no smaller than 48x48px (mostly 80px+)."
+  },
+  "instructions_to_main_agent": [
+    "Build this as a mobile-first web app mimicking a native React Native Expo feel (viewport constrained to mobile width, hidden scrollbars).",
+    "Use Phosphor icons (Users, Receipt, Plus, Minus, etc.).",
+    "Do NOT use pure HTML selects for sub-categories. Use Shadcn Drawer for the 'Options article' (cuisson, sirop, etc.) with large selectable chips (ModifierChip).",
+    "Implement the strict color-coding for categories as defined in 'colors.categories'. Apply these to the CategoryBar tabs and optionally as a thin top border on ItemCards.",
+    "The FloatingCartIndicator is critical. It must always be accessible when inside a table's menu, placed at the bottom over the item grid.",
+    "Apply data-testid to all interactable elements (e.g., data-testid='table-card-4', data-testid='item-card-burger', data-testid='modifier-saignant').",
+    "Ensure 'Chivo' and 'IBM Plex Sans' fonts are imported via Google Fonts in index.html.",
+    "Use solid Tailwind logic for active/selected states. Don't rely on hover states, as this is a touch interface. Prioritize 'active:' modifiers.",
+    "The layout must be constrained to `h-screen` and `overflow-hidden` at the root, with specific areas (like the item grid) being `overflow-y-auto` to feel like a native app."
+  ]
+}
