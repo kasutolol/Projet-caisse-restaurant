@@ -198,7 +198,7 @@ export default function MenuScreen() {
         </ScrollView>
       )}
 
-      <ScrollView contentContainerStyle={[styles.itemsGrid, { paddingBottom: 120 }]} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.itemsGrid, { paddingBottom: 220 }]} keyboardShouldPersistTaps="handled">
         {isSearching ? (
           searchResults.length === 0 ? (
             <Text style={styles.noResults}>Aucun article ne correspond à "{search}"</Text>
@@ -281,30 +281,45 @@ export default function MenuScreen() {
         </Animated.View>
       )}
 
-      {/* Sticky cart preview: shows FULL order live */}
-      <TouchableOpacity
-        testID="cart-preview-btn"
-        activeOpacity={0.85}
-        style={styles.cartBar}
-        onPress={() => totalCount > 0 && setShowCart(true)}
-      >
-        <View style={styles.cartBadge}>
-          <Text style={styles.cartBadgeText}>{totalCount}</Text>
+      {/* Sticky cart preview: shows FULL order live with last 3 items visible */}
+      <View style={styles.cartPanel}>
+        <View style={styles.cartHeader}>
+          <View style={styles.cartBadge}>
+            <Text style={styles.cartBadgeText}>{totalCount}</Text>
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.cartTitle}>
+              {totalCount === 0 ? "Aucun article" : `Commande : ${fmtPrice(totalPrice)}`}
+            </Text>
+            <Text style={styles.cartSub}>
+              {totalCount === 0 ? "Touchez un produit pour l'ajouter" : `${totalCount} article${totalCount > 1 ? "s" : ""}`}
+            </Text>
+          </View>
+          {totalCount > 0 && (
+            <TouchableOpacity testID="cart-expand-btn" onPress={() => setShowCart(true)} style={styles.cartExpandBtn}>
+              <Ionicons name="list" size={18} color="#fff" />
+              <Text style={styles.cartExpandBtnText}>Tout voir</Text>
+            </TouchableOpacity>
+          )}
         </View>
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.cartTitle}>
-            {totalCount === 0 ? "Aucun article ajouté" : `Commande : ${fmtPrice(totalPrice)}`}
-          </Text>
-          <Text style={styles.cartSub} numberOfLines={1}>
-            {totalCount === 0
-              ? "Touchez un produit pour l'ajouter"
-              : lastItem
-                ? `Dernier : ${lastItem.item_name} · ${totalCount} art. · voir détail`
-                : `${totalCount} articles`}
-          </Text>
-        </View>
-        {totalCount > 0 && <Ionicons name="chevron-up" size={22} color="#fff" />}
-      </TouchableOpacity>
+        {allItems.length > 0 && (
+          <View style={styles.cartList}>
+            {allItems.slice(-3).reverse().map(it => (
+              <View key={it.id} style={styles.cartRowMini}>
+                <Text style={styles.cartRowMiniQty}>{it.quantity}×</Text>
+                <Text style={styles.cartRowMiniName} numberOfLines={1}>
+                  {it.item_name}
+                  {it.options.length > 0 ? ` (${it.options.map(o => o.value).join(", ")})` : ""}
+                </Text>
+                <Text style={styles.cartRowMiniPrice}>{fmtPrice(it.unit_price * it.quantity)}</Text>
+              </View>
+            ))}
+            {allItems.length > 3 && (
+              <Text style={styles.cartMoreText}>+ {allItems.length - 3} autres articles · touchez "Tout voir"</Text>
+            )}
+          </View>
+        )}
+      </View>
 
       {/* Cart modal: shows ALL items grouped by course */}
       <Modal visible={showCart} transparent animationType="slide" onRequestClose={() => setShowCart(false)}>
@@ -451,12 +466,21 @@ const styles = StyleSheet.create({
   // Toast
   toast: { position: "absolute", alignSelf: "center", bottom: 95, backgroundColor: COLORS.success, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 24, flexDirection: "row", alignItems: "center", gap: 8, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   toastText: { color: "#fff", fontWeight: "800", fontSize: 15 },
-  // Cart bar
-  cartBar: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: COLORS.text, padding: 14, paddingBottom: 22, flexDirection: "row", alignItems: "center" },
+  // Cart panel
+  cartPanel: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: COLORS.text, paddingBottom: 16, borderTopWidth: 3, borderTopColor: COLORS.primary },
+  cartHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 },
   cartBadge: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center" },
   cartBadgeText: { color: "#fff", fontWeight: "900", fontSize: 16 },
-  cartTitle: { color: "#fff", fontWeight: "800", fontSize: 14 },
+  cartTitle: { color: "#fff", fontWeight: "800", fontSize: 15 },
   cartSub: { color: "#A1A1AA", fontSize: 12, marginTop: 2 },
+  cartExpandBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  cartExpandBtnText: { color: "#fff", fontWeight: "800", fontSize: 12 },
+  cartList: { paddingHorizontal: 14, paddingTop: 4, paddingBottom: 4, gap: 4, backgroundColor: "rgba(255,255,255,0.05)", marginHorizontal: 8, marginBottom: 4, borderRadius: 8 },
+  cartRowMini: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
+  cartRowMiniQty: { color: COLORS.primary, fontWeight: "900", fontSize: 13, width: 24 },
+  cartRowMiniName: { flex: 1, color: "#fff", fontSize: 13, fontWeight: "600" },
+  cartRowMiniPrice: { color: "#fff", fontSize: 13, fontWeight: "800" },
+  cartMoreText: { color: "#A1A1AA", fontSize: 11, fontStyle: "italic", textAlign: "center", paddingVertical: 4 },
   // Cart sheet
   cartSheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "85%" },
   cartSheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
