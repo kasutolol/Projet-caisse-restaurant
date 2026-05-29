@@ -111,7 +111,7 @@ MENU = [
         "icon": "water",
         "items": [
             {"name": "Sirop à l'eau", "price": 3.00, "unit": "25cl", "option_groups": [{"name": "Parfum sirop", "type": "single", "required": True, "choices": ["Grenadine", "Menthe", "Pêche", "Fraise", "Citron", "Framboise", "Cerise", "Cassis", "Mûre", "Banane", "Kiwi", "Orgeat"]}]},
-            {"name": "Diabolo", "price": 4.50, "unit": "25cl", "option_groups": [{"name": "Parfum sirop", "type": "single", "required": True, "choices": ["Grenadine", "Menthe", "Pêche", "Fraise", "Citron", "Framboise", "Cerise", "Cassis", "Mûre", "Banane", "Kiwi", "Orgeat"]}]},
+            {"name": "Diabolo", "price": 4.50, "unit": "25cl", "option_groups": [{"name": "Parfum sirop", "type": "single", "required": True, "choices": ["Grenadine", "Menthe", "Pêche", "Fraise", "Citron", "Framboise", "Cerise", "Cassis", "Mûre", "Banane", "Kiwi", "DBK (Banane Kiwi)", "Orgeat"]}]},
             {"name": "Orangina", "price": 4.50, "unit": "25cl"},
             {"name": "Ice tea", "price": 4.50, "unit": "25cl"},
             {"name": "Oasis Tropical", "price": 4.50, "unit": "25cl"},
