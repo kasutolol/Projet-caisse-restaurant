@@ -1,9 +1,9 @@
 import { useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { api, COLORS, CATEGORY_COLORS, fmtPrice } from "@/src/api";
+import { api, COLORS, fmtPrice } from "@/src/api";
 
 type OrderItem = {
   id: string; item_name: string; category_key: string; unit_price: number;
@@ -15,6 +15,10 @@ export default function OrderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [order, setOrder] = useState<Order | null>(null);
+  const [closeModal, setCloseModal] = useState(false);
+  const [coversModal, setCoversModal] = useState(false);
+  const [newCovers, setNewCovers] = useState("2");
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try { setOrder(await api(`/orders/${id}`)); } catch (e: any) { console.log(e.message); }
@@ -29,25 +33,33 @@ export default function OrderScreen() {
 
   const sendOrder = async () => {
     await api(`/orders/${id}/send`, { method: "POST" });
-    Alert.alert("Envoyé", "Commande marquée comme envoyée en cuisine/bar.");
+    setFeedback("✓ Commande envoyée");
+    setTimeout(() => setFeedback(null), 1500);
     load();
   };
 
-  const closeOrder = () => {
-    Alert.alert("Clôturer la table ?", `Total : ${fmtPrice(order?.total || 0)}`, [
-      { text: "Annuler", style: "cancel" },
-      { text: "Clôturer", style: "destructive", onPress: async () => {
-        await api(`/orders/${id}/close`, { method: "POST" });
-        router.replace("/");
-      }},
-    ]);
+  const doClose = async () => {
+    setCloseModal(false);
+    await api(`/orders/${id}/close`, { method: "POST" });
+    router.replace("/");
+  };
+
+  const openCoversEdit = () => {
+    setNewCovers(String(order?.covers || 1));
+    setCoversModal(true);
+  };
+
+  const saveCovers = async () => {
+    const c = parseInt(newCovers, 10) || 1;
+    await api(`/orders/${id}/covers?covers=${c}`, { method: "PUT" });
+    setCoversModal(false);
+    load();
   };
 
   if (!order) {
     return <SafeAreaView style={styles.safe}><Text style={styles.loading}>Chargement…</Text></SafeAreaView>;
   }
 
-  // Group items by category
   const grouped: Record<string, OrderItem[]> = {};
   order.items.forEach(it => {
     grouped[it.category_key] = grouped[it.category_key] || [];
@@ -62,7 +74,11 @@ export default function OrderScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Table {order.table_number}</Text>
-          <Text style={styles.subtitle}>{order.covers} couverts · {order.items.length} articles</Text>
+          <TouchableOpacity testID="edit-covers-btn" onPress={openCoversEdit} style={styles.subRow}>
+            <Ionicons name="people" size={14} color={COLORS.textSecondary} />
+            <Text style={styles.subtitle}>{order.covers} couverts</Text>
+            <Ionicons name="pencil" size={12} color={COLORS.primary} />
+          </TouchableOpacity>
         </View>
         <TouchableOpacity testID="add-btn" style={styles.addBtn} onPress={() => router.push(`/menu?orderId=${order.id}`)}>
           <Ionicons name="add" size={24} color="#fff" />
@@ -79,7 +95,6 @@ export default function OrderScreen() {
         )}
         {Object.keys(grouped).map(catKey => {
           const items = grouped[catKey];
-          const cat = items[0];
           return (
             <View key={catKey} style={styles.group}>
               {items.map(it => (
@@ -109,6 +124,12 @@ export default function OrderScreen() {
         })}
       </ScrollView>
 
+      {feedback && (
+        <View style={styles.feedback}>
+          <Text style={styles.feedbackText}>{feedback}</Text>
+        </View>
+      )}
+
       <View style={styles.footer}>
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>TOTAL</Text>
@@ -119,12 +140,67 @@ export default function OrderScreen() {
             <Ionicons name="send-outline" size={18} color={COLORS.text} />
             <Text style={styles.btnGhostText}>Envoyer</Text>
           </TouchableOpacity>
-          <TouchableOpacity testID="close-btn" style={[styles.btn, styles.btnDanger]} onPress={closeOrder}>
+          <TouchableOpacity testID="close-btn" style={[styles.btn, styles.btnDanger]} onPress={() => setCloseModal(true)}>
             <Ionicons name="checkmark-done" size={18} color="#fff" />
             <Text style={styles.btnDangerText}>Clôturer</Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Close confirmation modal (custom, works on all platforms) */}
+      <Modal visible={closeModal} transparent animationType="fade" onRequestClose={() => setCloseModal(false)}>
+        <View style={styles.modalBack}>
+          <View style={styles.modalCard}>
+            <Ionicons name="alert-circle" size={42} color={COLORS.warning} style={{ alignSelf: "center" }} />
+            <Text style={styles.modalTitle}>Clôturer la table ?</Text>
+            <Text style={styles.modalText}>
+              {order.items.length === 0
+                ? "Cette table ne contient aucune commande. Elle sera libérée."
+                : `Total : ${fmtPrice(order.total)} · ${order.items.length} article${order.items.length > 1 ? "s" : ""}`}
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.mBtn, styles.btnSecondary]} onPress={() => setCloseModal(false)}>
+                <Text style={styles.btnSecondaryText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="confirm-close-btn" style={[styles.mBtn, styles.btnDanger]} onPress={doClose}>
+                <Text style={styles.btnDangerText}>Clôturer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit covers modal */}
+      <Modal visible={coversModal} transparent animationType="fade" onRequestClose={() => setCoversModal(false)}>
+        <View style={styles.modalBack}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Modifier les couverts</Text>
+            <TextInput
+              testID="new-covers-input"
+              style={styles.input}
+              value={newCovers}
+              onChangeText={setNewCovers}
+              keyboardType="number-pad"
+              autoFocus
+            />
+            <View style={styles.coverChips}>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+                <TouchableOpacity key={n} style={[styles.chip, newCovers === String(n) && styles.chipActive]} onPress={() => setNewCovers(String(n))}>
+                  <Text style={[styles.chipText, newCovers === String(n) && styles.chipTextActive]}>{n}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.mBtn, styles.btnSecondary]} onPress={() => setCoversModal(false)}>
+                <Text style={styles.btnSecondaryText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="save-covers-btn" style={[styles.mBtn, styles.btnPrimary]} onPress={saveCovers}>
+                <Text style={styles.btnPrimaryText}>Enregistrer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -135,6 +211,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", padding: 12, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 8 },
   backBtn: { padding: 4 },
   title: { fontSize: 22, fontWeight: "900", color: COLORS.text },
+  subRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
   subtitle: { fontSize: 12, color: COLORS.textSecondary },
   addBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: COLORS.primary, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12 },
   addBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
@@ -152,6 +229,8 @@ const styles = StyleSheet.create({
   qBtn: { width: 30, height: 30, alignItems: "center", justifyContent: "center" },
   qty: { fontWeight: "800", fontSize: 15, width: 22, textAlign: "center" },
   price: { fontWeight: "800", fontSize: 14, color: COLORS.text, minWidth: 60, textAlign: "right" },
+  feedback: { position: "absolute", alignSelf: "center", bottom: 130, backgroundColor: "#14532D", paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12 },
+  feedbackText: { color: "#fff", fontWeight: "800" },
   footer: { padding: 14, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border },
   totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   totalLabel: { fontSize: 13, fontWeight: "800", color: COLORS.textSecondary, letterSpacing: 1 },
@@ -162,4 +241,20 @@ const styles = StyleSheet.create({
   btnGhostText: { fontWeight: "800", color: COLORS.text },
   btnDanger: { backgroundColor: COLORS.text },
   btnDangerText: { fontWeight: "800", color: "#fff" },
+  modalBack: { flex: 1, backgroundColor: "rgba(9,9,11,0.6)", justifyContent: "center", padding: 20 },
+  modalCard: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 22 },
+  modalTitle: { fontSize: 22, fontWeight: "900", color: COLORS.text, marginTop: 8, textAlign: "center" },
+  modalText: { fontSize: 14, color: COLORS.textSecondary, marginTop: 8, marginBottom: 18, textAlign: "center", lineHeight: 20 },
+  modalActions: { flexDirection: "row", gap: 10, marginTop: 12 },
+  mBtn: { flex: 1, paddingVertical: 16, borderRadius: 12, alignItems: "center" },
+  btnPrimary: { backgroundColor: COLORS.primary },
+  btnPrimaryText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+  btnSecondary: { backgroundColor: COLORS.bg },
+  btnSecondaryText: { color: COLORS.text, fontWeight: "700", fontSize: 16 },
+  input: { borderWidth: 2, borderColor: COLORS.border, borderRadius: 12, padding: 14, fontSize: 18, fontWeight: "700", color: COLORS.text, marginTop: 14 },
+  coverChips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
+  chip: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: COLORS.border, alignItems: "center", justifyContent: "center" },
+  chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  chipText: { fontWeight: "800", color: COLORS.text },
+  chipTextActive: { color: "#fff" },
 });

@@ -84,6 +84,11 @@ class TableCreate(BaseModel):
     number: int
 
 
+class OpenByNumber(BaseModel):
+    number: int
+    covers: int = 2
+
+
 # ============ Helpers ============
 def clean(doc: dict) -> dict:
     if not doc:
@@ -103,13 +108,7 @@ async def startup():
             "items": [{"id": str(uuid.uuid4()), **it} for it in cat["items"]],
         })
 
-    # Seed tables 1..12 if none
-    count = await db.tables.count_documents({})
-    if count == 0:
-        for n in range(1, 13):
-            t = Table(number=n)
-            await db.tables.insert_one(t.dict())
-    logging.info("Seeded menu & tables")
+    logging.info("Seeded menu")
 
 
 # ============ Menu ============
@@ -157,6 +156,44 @@ async def open_order(table_id: str, covers: int):
         {"$set": {"status": "occupied", "covers": covers, "current_order_id": order.id}},
     )
     return clean(order.dict())
+
+
+@api_router.post("/tables/open-by-number")
+async def open_by_number(body: OpenByNumber):
+    """Trouve ou crée une table par son numéro, puis ouvre/retourne sa commande en cours."""
+    table = await db.tables.find_one({"number": body.number}, {"_id": 0})
+    if not table:
+        t = Table(number=body.number)
+        await db.tables.insert_one(t.dict())
+        table = t.dict()
+    # Si occupée et commande en cours → on retourne la commande existante
+    if table.get("status") == "occupied" and table.get("current_order_id"):
+        o = await db.orders.find_one({"id": table["current_order_id"]}, {"_id": 0})
+        if o and o.get("status") == "open":
+            o["total"] = round(sum(i["unit_price"] * i["quantity"] for i in o["items"]), 2)
+            return {"order": o, "existing": True}
+    # Sinon on ouvre une nouvelle commande
+    order = Order(table_id=table["id"], table_number=table["number"], covers=body.covers)
+    await db.orders.insert_one(order.dict())
+    await db.tables.update_one(
+        {"id": table["id"]},
+        {"$set": {"status": "occupied", "covers": body.covers, "current_order_id": order.id}},
+    )
+    o = order.dict()
+    o["total"] = 0.0
+    return {"order": o, "existing": False}
+
+
+@api_router.put("/orders/{order_id}/covers")
+async def update_covers(order_id: str, covers: int):
+    if covers < 1:
+        raise HTTPException(400, "Nombre de couverts invalide")
+    o = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not o:
+        raise HTTPException(404, "Commande introuvable")
+    await db.orders.update_one({"id": order_id}, {"$set": {"covers": covers}})
+    await db.tables.update_one({"id": o["table_id"]}, {"$set": {"covers": covers}})
+    return {"ok": True, "covers": covers}
 
 
 @api_router.get("/orders/{order_id}")

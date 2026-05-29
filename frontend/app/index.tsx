@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal, TextInput } from "react-native";
+import { useCallback, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal, TextInput, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -11,83 +11,131 @@ export default function Index() {
   const router = useRouter();
   const [tables, setTables] = useState<Table[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [openModal, setOpenModal] = useState<Table | null>(null);
+  const [tableNum, setTableNum] = useState("");
+  const [coversModal, setCoversModal] = useState<{ number: number } | null>(null);
   const [covers, setCovers] = useState("2");
 
   const load = useCallback(async () => {
     try {
       const t = await api("/tables");
       setTables(t);
-    } catch (e: any) {
-      console.log(e.message);
-    }
+    } catch (e: any) { console.log(e.message); }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const openTable = async (t: Table) => {
-    if (t.status === "occupied" && t.current_order_id) {
-      router.push(`/order/${t.current_order_id}`);
-    } else {
-      setOpenModal(t);
-      setCovers("2");
+  const openTableByNumber = async () => {
+    const n = parseInt(tableNum, 10);
+    if (!n || n < 1) {
+      Alert.alert("Numéro invalide", "Entrez un numéro de table valide.");
+      return;
     }
+    // Cherche table existante occupée
+    const existing = tables.find(t => t.number === n);
+    if (existing && existing.status === "occupied" && existing.current_order_id) {
+      setTableNum("");
+      router.push(`/order/${existing.current_order_id}`);
+      return;
+    }
+    setCoversModal({ number: n });
+    setCovers("2");
   };
 
   const confirmOpen = async () => {
-    if (!openModal) return;
+    if (!coversModal) return;
     const c = parseInt(covers, 10) || 1;
-    const order = await api(`/tables/${openModal.id}/order?covers=${c}`, { method: "POST" });
-    setOpenModal(null);
-    router.push(`/order/${order.id}`);
+    try {
+      const res = await api("/tables/open-by-number", {
+        method: "POST",
+        body: JSON.stringify({ number: coversModal.number, covers: c }),
+      });
+      setCoversModal(null);
+      setTableNum("");
+      router.push(`/order/${res.order.id}`);
+    } catch (e: any) {
+      Alert.alert("Erreur", e.message);
+    }
   };
 
-  const freeCount = tables.filter(t => t.status === "free").length;
-  const occCount = tables.length - freeCount;
+  const openExisting = (t: Table) => {
+    if (t.current_order_id) router.push(`/order/${t.current_order_id}`);
+  };
+
+  const occupied = tables.filter(t => t.status === "occupied").sort((a, b) => a.number - b.number);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Tables</Text>
-          <Text style={styles.subtitle}>{freeCount} libres · {occCount} occupées</Text>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.title}>Service</Text>
+            <Text style={styles.subtitle}>{occupied.length} table{occupied.length > 1 ? "s" : ""} en cours</Text>
+          </View>
+          <TouchableOpacity testID="orders-btn" style={styles.headerBtn} onPress={() => router.push("/orders")}>
+            <Ionicons name="receipt-outline" size={22} color={COLORS.text} />
+            <Text style={styles.headerBtnText}>Historique</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity testID="orders-btn" style={styles.headerBtn} onPress={() => router.push("/orders")}>
-          <Ionicons name="receipt-outline" size={22} color={COLORS.text} />
-          <Text style={styles.headerBtnText}>Historique</Text>
-        </TouchableOpacity>
-      </View>
 
-      <ScrollView
-        contentContainerStyle={styles.grid}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
-      >
-        {tables.map(t => {
-          const occ = t.status === "occupied";
-          return (
-            <TouchableOpacity
-              testID={`table-card-${t.number}`}
-              key={t.id}
-              style={[styles.card, { backgroundColor: occ ? "#FEF3C7" : "#DCFCE7", borderColor: occ ? "#F59E0B" : "#22C55E" }]}
-              onPress={() => openTable(t)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.cardNum, { color: occ ? "#78350F" : "#14532D" }]}>{t.number}</Text>
-              <View style={styles.coversRow}>
-                <Ionicons name="people" size={16} color={occ ? "#78350F" : "#14532D"} />
-                <Text style={[styles.coversTxt, { color: occ ? "#78350F" : "#14532D" }]}>
-                  {occ ? `${t.covers} couv.` : "Libre"}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
+        >
+          <View style={styles.openBox}>
+            <Text style={styles.openBoxLabel}>Ouvrir / Reprendre une table</Text>
+            <View style={styles.openRow}>
+              <TextInput
+                testID="table-number-input"
+                style={styles.tableInput}
+                value={tableNum}
+                onChangeText={setTableNum}
+                placeholder="N°"
+                placeholderTextColor="#A1A1AA"
+                keyboardType="number-pad"
+                returnKeyType="go"
+                onSubmitEditing={openTableByNumber}
+                maxLength={4}
+              />
+              <TouchableOpacity testID="open-table-btn" style={styles.openBtn} onPress={openTableByNumber} activeOpacity={0.8}>
+                <Ionicons name="arrow-forward" size={22} color="#fff" />
+                <Text style={styles.openBtnText}>Ouvrir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-      <Modal visible={!!openModal} transparent animationType="fade" onRequestClose={() => setOpenModal(null)}>
+          <Text style={styles.sectionTitle}>Tables en cours</Text>
+          {occupied.length === 0 ? (
+            <View style={styles.empty}>
+              <Ionicons name="restaurant-outline" size={48} color={COLORS.textSecondary} />
+              <Text style={styles.emptyText}>Aucune table en cours.{"\n"}Saisissez un numéro pour démarrer.</Text>
+            </View>
+          ) : (
+            <View style={styles.grid}>
+              {occupied.map(t => (
+                <TouchableOpacity
+                  testID={`table-card-${t.number}`}
+                  key={t.id}
+                  style={styles.card}
+                  onPress={() => openExisting(t)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.cardNum}>{t.number}</Text>
+                  <View style={styles.coversRow}>
+                    <Ionicons name="people" size={16} color="#78350F" />
+                    <Text style={styles.coversTxt}>{t.covers} couv.</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <Modal visible={!!coversModal} transparent animationType="fade" onRequestClose={() => setCoversModal(null)}>
         <View style={styles.modalBack}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Table {openModal?.number}</Text>
+            <Text style={styles.modalTitle}>Table {coversModal?.number}</Text>
             <Text style={styles.modalLabel}>Nombre de couverts</Text>
             <TextInput
               testID="covers-input"
@@ -105,7 +153,7 @@ export default function Index() {
               ))}
             </View>
             <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.btn, styles.btnSecondary]} onPress={() => setOpenModal(null)}>
+              <TouchableOpacity style={[styles.btn, styles.btnSecondary]} onPress={() => setCoversModal(null)}>
                 <Text style={styles.btnSecondaryText}>Annuler</Text>
               </TouchableOpacity>
               <TouchableOpacity testID="confirm-open-btn" style={[styles.btn, styles.btnPrimary]} onPress={confirmOpen}>
@@ -126,11 +174,21 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, color: COLORS.textSecondary, marginTop: 2 },
   headerBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: COLORS.bg, borderRadius: 10 },
   headerBtnText: { fontWeight: "700", color: COLORS.text },
-  grid: { padding: 14, flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  card: { width: "31%", aspectRatio: 1, borderRadius: 16, borderWidth: 2, alignItems: "center", justifyContent: "center", padding: 8 },
-  cardNum: { fontSize: 42, fontWeight: "900", letterSpacing: -1 },
+  scroll: { padding: 14, paddingBottom: 40 },
+  openBox: { backgroundColor: COLORS.surface, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, marginBottom: 22 },
+  openBoxLabel: { fontSize: 12, fontWeight: "800", color: COLORS.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
+  openRow: { flexDirection: "row", gap: 10 },
+  tableInput: { flex: 1, borderWidth: 2, borderColor: COLORS.border, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 16, fontSize: 28, fontWeight: "900", color: COLORS.text, textAlign: "center" },
+  openBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: COLORS.primary, paddingHorizontal: 22, borderRadius: 14 },
+  openBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+  sectionTitle: { fontSize: 13, fontWeight: "800", color: COLORS.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
+  empty: { alignItems: "center", marginTop: 30, gap: 10, padding: 20 },
+  emptyText: { color: COLORS.textSecondary, textAlign: "center", lineHeight: 20 },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  card: { width: "31%", aspectRatio: 1, borderRadius: 16, borderWidth: 2, alignItems: "center", justifyContent: "center", padding: 8, backgroundColor: "#FEF3C7", borderColor: "#F59E0B" },
+  cardNum: { fontSize: 42, fontWeight: "900", letterSpacing: -1, color: "#78350F" },
   coversRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
-  coversTxt: { fontSize: 13, fontWeight: "700" },
+  coversTxt: { fontSize: 13, fontWeight: "700", color: "#78350F" },
   modalBack: { flex: 1, backgroundColor: "rgba(9,9,11,0.6)", justifyContent: "center", padding: 20 },
   modalCard: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 22 },
   modalTitle: { fontSize: 24, fontWeight: "900", color: COLORS.text, marginBottom: 16 },
